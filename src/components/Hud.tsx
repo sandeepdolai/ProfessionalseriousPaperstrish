@@ -35,7 +35,7 @@ export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onFull }: 
         </button>
       </div>
       <div className="relative flex justify-start">
-        <nav className="label relative pointer-events-auto flex gap-x-5" aria-label="Project views">
+        <nav className="label relative pointer-events-auto flex gap-x-5" aria-label="Paper Stish views">
           <a
             href="#"
             aria-current={view === "home" || view === "project" ? "page" : undefined}
@@ -47,7 +47,7 @@ export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onFull }: 
               view === "full" ? "opacity-50 hover:opacity-100" : ""
             }`}
           >
-            Featured
+            Template
           </a>
           <span aria-hidden="true">/</span>
           <a
@@ -61,7 +61,7 @@ export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onFull }: 
               view === "full" ? "" : "opacity-50 hover:opacity-100"
             }`}
           >
-            Full
+            My
           </a>
         </nav>
         <button
