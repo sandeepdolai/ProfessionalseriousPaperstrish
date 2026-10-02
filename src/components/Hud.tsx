@@ -3,15 +3,15 @@
 import { SITE } from "@/lib/projects";
 
 interface HudProps {
-  view: "home" | "full" | "project";
+  view: "home" | "my" | "project";
   overlay: "profile" | "newsletter" | null;
   onProfile: () => void;
   onNewsletter: () => void;
   onHome: () => void;
-  onFull: () => void;
+  onMy: () => void;
 }
 
-export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onFull }: HudProps) {
+export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onMy }: HudProps) {
   return (
     <div className="pointer-events-none fixed inset-0 z-40 flex flex-col justify-between px-40 py-25 s:px-80 s:py-40 text-white">
       <div className="flex items-start justify-between">
@@ -44,7 +44,7 @@ export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onFull }: 
               onHome();
             }}
             className={`relative transition-opacity duration-500 ease-out ${
-              view === "full" ? "opacity-50 hover:opacity-100" : ""
+              view === "my" ? "opacity-50 hover:opacity-100" : ""
             }`}
           >
             Template
@@ -52,13 +52,13 @@ export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onFull }: 
           <span aria-hidden="true">/</span>
           <a
             href="#"
-            aria-current={view === "full" ? "page" : undefined}
+            aria-current={view === "my" ? "page" : undefined}
             onClick={(e) => {
               e.preventDefault();
-              onFull();
+              onMy();
             }}
             className={`relative transition-opacity duration-500 ease-out ${
-              view === "full" ? "" : "opacity-50 hover:opacity-100"
+              view === "my" ? "" : "opacity-50 hover:opacity-100"
             }`}
           >
             My
