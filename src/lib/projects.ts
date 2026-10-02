@@ -198,17 +198,13 @@ export const FULL_INDEX: IndexItem[] = [
 ];
 
 export const SITE = {
-  name: "Jesper Landberg",
-  role: "design engineer",
+  name: "Paper Stish",
+  role: "photo editor",
   summary:
-    "Jesper Landberg, Swedish design engineer, named Awwwards Independent of the Year in 2022 and 2024, building visually rich, motion-driven websites.",
+    "Paper Stish is a simple, friendly photo editor for everyday photo editing, templates, text, stickers, and more.",
   about:
-    "Usually lead or sole developer, responsible for front-end architecture, animation, interaction and CMS, alongside international agencies and creative teams. Freelance, and available to studios and clients anywhere.",
-  awards: "77 awards — 30× Awwwards, 40× FWA, 3× Webby, 2× Lovie.",
-  email: "jesper@alpacka.studio",
-  profiles: [
-    { title: "Instagram", url: "https://www.instagram.com/jesperlandberg222/" },
-    { title: "X", url: "https://x.com/jesper_alpacka" },
-    { title: "LinkedIn", url: "https://www.linkedin.com/in/jesper-landberg-ba2984256/" },
-  ],
+    "Edit photos, use ready-made templates, create your own designs, and export your finished work without storing user projects on the server.",
+  awards: "",
+  email: "",
+  profiles: [],
 };
