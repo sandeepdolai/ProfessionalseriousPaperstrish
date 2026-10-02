@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+/* ── The reference's design system ─────────────────────────────────────────
+   Root font-size is fluid: 1rem = 100vw/size*10, clamped 5px..20px.
+   --size: 390 (<650px), 1500 (>=650px). Everything on the site is measured
+   in 0.1rem units, so Tailwind's spacing scale is re-based to
+   0.1rem: p-40 = 4rem, gap-10 = 1rem, size-25 = 2.5rem, w-420 = 42rem.
+───────────────────────────────────────────────────────────────────────────*/
+
+@custom-variant s (@media (min-width: 650px));
+
+@theme {
+  --spacing: 0.1rem;
+  --text-8: 0.8rem;
+  --text-14: 1.4rem;
+  --text-16: 1.6rem;
+  --text-18: 1.8rem;
+  --text-30: 3rem;
+  --text-35: 3.5rem;
+  --text-45: 4.5rem;
+  --radius-15: 1.5rem;
+  --radius-20: 2rem;
+  --font-sans: sans, ui-sans-serif, system-ui, sans-serif;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: sans;
+  font-style: normal;
+  font-weight: 200 1000;
+  src: url(/fonts/ABCDiatypePlusVariable.woff2) format("woff2-variations");
+}
+
+:root {
+  --size: 390;
+}
+@media (min-width: 650px) {
+  :root {
+    --size: 1500;
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    font-size: clamp(5px, 20px, 10 * 100vw / var(--size));
+    -webkit-text-size-adjust: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body,
+  html {
+    height: 100%;
+    max-height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    position: fixed;
+    touch-action: none;
+    width: 100%;
+  }
+
+  body {
+    background: #000;
+    color: #fff;
+    font-family: sans, sans-serif;
+    font-size: 1.4rem;
+    font-weight: 400;
+    line-height: 1.4;
+  }
+
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+  button {
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+}
+
+@layer components {
+  .label {
+    font-size: 1rem;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  /* WebGL layer — sits above the black page, below the DOM UI */
+  .gl {
+    inset: 0;
+    pointer-events: none;
+    position: fixed;
+    z-index: 10;
+  }
+  .gl canvas {
+    inset: 0;
+    position: absolute;
+    display: block;
+  }
+}
+
+html.grabbable {
+  cursor: grab;
+}
+html.grabbing,
+html.grabbing * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
