@@ -5,11 +5,11 @@ import { useFolio } from "@/gl/react";
 import { FEATURED } from "@/lib/projects";
 import { HomeCarousel } from "./HomeCarousel";
 import { Hud } from "./Hud";
-import { FullIndex } from "./FullIndex";
+import { MyProjects } from "./MyProjects";
 import { ProjectSheet } from "./ProjectSheet";
 import { NewsletterOverlay, ProfileOverlay } from "./Overlays";
 
-type View = "home" | "full" | "project";
+type View = "home" | "my" | "project";
 type Overlay = "profile" | "newsletter" | null;
 
 export function App() {
@@ -18,7 +18,7 @@ export function App() {
   const [projectSlug, setProjectSlug] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [sheetEntered, setSheetEntered] = useState(false);
-  const [fullEntered, setFullEntered] = useState(false);
+  const [myEntered, setMyEntered] = useState(false);
   const [carouselHidden, setCarouselHidden] = useState(false);
   const [returning, setReturning] = useState<string | null>(null);
 
@@ -80,22 +80,22 @@ export function App() {
 
   /* ── view transitions ────────────────────────────────────────────────── */
   const wipeTo = useCallback(
-    async (next: View) => {
+    async (next: "my" | "home") => {
       if (busy.current) return;
       busy.current = true;
       folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
       await wait(500);
-      if (next === "full") {
-        setView("full");
-        setFullEntered(false);
-      } else if (next === "home") {
+      if (next === "my") {
+        setView("my");
+        setMyEntered(false);
+      } else {
         setView("home");
-        setFullEntered(false);
+        setMyEntered(false);
       }
       await wait(120);
       folio.closeHole();
       await wait(220);
-      setFullEntered(true);
+      setMyEntered(true);
       busy.current = false;
     },
     [folio]
@@ -123,7 +123,6 @@ export function App() {
           setProjectSlug(slug);
           setSheetEntered(true);
         }
-        // hide the flown mesh under the DOM sheet
         if (entry) {
           entry.mesh.visible = false;
           entry.flying = false;
@@ -184,15 +183,13 @@ export function App() {
     if (busy.current) return;
     if (overlay) closeOverlay();
     if (view === "project") closeProject();
-    else if (view === "full") wipeTo("home");
+    else if (view === "my") wipeTo("home");
   }, [view, overlay, closeOverlay, closeProject, wipeTo]);
 
-  const goFull = useCallback(() => {
+  const goMy = useCallback(() => {
     if (busy.current || view !== "home" || overlay) return;
-    wipeTo("full");
+    wipeTo("my");
   }, [view, overlay, wipeTo]);
-
-  const projectFor = useCallback((slug: string) => FEATURED.find((p) => p.slug === slug)!, []);
 
   return (
     <>
@@ -200,14 +197,12 @@ export function App() {
         folio={folio}
         enabled={view === "home" && !overlay}
         returning={returning}
-        hidden={carouselHidden}
+        hidden={carouselHidden || view !== "home"}
         onSelect={(slug) => openProject(slug, true)}
         apiRef={carouselApi}
       />
 
-      {view === "full" && (
-        <FullIndex entered={fullEntered} onSelect={(slug) => openProject(slug, false)} />
-      )}
+      {view === "my" && <MyProjects entered={myEntered} onCreate={() => {}} />}
 
       {view === "project" && project && (
         <ProjectSheet
@@ -228,9 +223,8 @@ export function App() {
         onProfile={() => toggleOverlay("profile")}
         onNewsletter={() => toggleOverlay("newsletter")}
         onHome={goHome}
-        onFull={goFull}
+        onMy={goMy}
       />
-      {void projectFor}
     </>
   );
 }
