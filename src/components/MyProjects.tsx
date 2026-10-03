@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 
 interface Props {
   entered: boolean;
-  onCreate: () => void;
+  onCreate: (ratio: EditorRatio) => void;
 }
+
+export type EditorRatio = "9:16" | "16:9" | "4:5" | "1:1";
 
 interface LocalProject {
   id: string;
@@ -42,10 +44,7 @@ export function MyProjects({ entered, onCreate }: Props) {
 
   const chooseRatio = (ratio: (typeof RATIOS)[number]) => {
     setRatioOpen(false);
-    // Keep the existing Create flow ready for the editor. The selected ratio
-    // is dispatched as a browser event so the editor can consume it next.
-    window.dispatchEvent(new CustomEvent("paper-stish-create", { detail: ratio.label }));
-    onCreate();
+    onCreate(ratio.label);
   };
 
   return (
@@ -76,10 +75,7 @@ export function MyProjects({ entered, onCreate }: Props) {
             </div>
             <p className="pointer-events-none absolute bottom-10 inset-x-10 s:bottom-10 s:inset-x-20 flex items-end justify-between text-white">
               <span className="whitespace-nowrap text-16 s:text-18 tracking-[-0.05em]">Create</span>
-              <span
-                className="relative inline-flex size-25 s:size-25 items-center justify-center rounded-full bg-black text-white transition-transform duration-300 group-hover:translate-x-1"
-                aria-hidden="true"
-              >
+              <span className="relative inline-flex size-25 s:size-25 items-center justify-center rounded-full bg-black text-white transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true">
                 <svg viewBox="0 0 24 24" className="size-15" fill="none" stroke="currentColor" strokeWidth="2.4">
                   <path d="M5 12h13M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -100,11 +96,7 @@ export function MyProjects({ entered, onCreate }: Props) {
               }}
             >
               {project.thumbnail ? (
-                <img
-                  src={project.thumbnail}
-                  alt=""
-                  className="absolute inset-0 size-full object-cover transition-transform duration-700 ease-out group-hover:scale-[0.985]"
-                />
+                <img src={project.thumbnail} alt="" className="absolute inset-0 size-full object-cover transition-transform duration-700 ease-out group-hover:scale-[0.985]" />
               ) : (
                 <div className="absolute inset-0 bg-black/20 transition-transform duration-700 ease-out group-hover:scale-[0.985]" />
               )}
@@ -123,51 +115,24 @@ export function MyProjects({ entered, onCreate }: Props) {
       </div>
 
       {ratioOpen && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 px-20 py-24 backdrop-blur-[2px]"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Choose project ratio"
-          onClick={() => setRatioOpen(false)}
-        >
-          <div
-            className="w-full max-w-[980px] text-white"
-            onClick={(event) => event.stopPropagation()}
-            style={{ animation: "ratio-panel-in 0.55s cubic-bezier(0.16,1,0.3,1) both" }}
-          >
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 px-20 py-24 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Choose project ratio" onClick={() => setRatioOpen(false)}>
+          <div className="w-full max-w-[980px] text-white" onClick={(event) => event.stopPropagation()} style={{ animation: "ratio-panel-in 0.55s cubic-bezier(0.16,1,0.3,1) both" }}>
             <div className="mb-20 flex items-end justify-between s:mb-28">
               <div>
                 <p className="text-24 s:text-32 tracking-[-0.06em]">Create</p>
                 <p className="mt-3 text-14 s:text-16 opacity-55 tracking-[-0.04em]">Choose a size for your new project</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setRatioOpen(false)}
-                className="inline-flex size-48 items-center justify-center rounded-full bg-white/10 transition-transform duration-300 hover:scale-95"
-                aria-label="Close"
-              >
-                <svg viewBox="0 0 24 24" className="size-22" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-                </svg>
+              <button type="button" onClick={() => setRatioOpen(false)} className="inline-flex size-48 items-center justify-center rounded-full bg-white/10 transition-transform duration-300 hover:scale-95" aria-label="Close">
+                <svg viewBox="0 0 24 24" className="size-22" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" /></svg>
               </button>
             </div>
 
             <div className="grid grid-cols-2 gap-12 s:grid-cols-4 s:gap-16">
               {RATIOS.map((ratio) => (
-                <button
-                  key={ratio.label}
-                  type="button"
-                  onClick={() => chooseRatio(ratio)}
-                  className="group text-left"
-                >
+                <button key={ratio.label} type="button" onClick={() => chooseRatio(ratio)} className="group text-left">
                   <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden rounded-15 s:rounded-20 bg-white/[0.07] transition-transform duration-500 ease-out group-hover:scale-[0.97]">
-                    <div
-                      className="max-h-[68%] max-w-[68%] rounded-[10px] border border-white/55 bg-white/[0.035] transition-transform duration-500 ease-out group-hover:scale-105"
-                      style={{ aspectRatio: ratio.ratio }}
-                    />
-                    <span className="absolute bottom-14 left-14 rounded-full bg-black/70 px-10 py-5 text-12 s:text-14 tracking-[-0.03em]">
-                      {ratio.label}
-                    </span>
+                    <div className="max-h-[68%] max-w-[68%] rounded-[10px] border border-white/55 bg-white/[0.035] transition-transform duration-500 ease-out group-hover:scale-105" style={{ aspectRatio: ratio.ratio }} />
+                    <span className="absolute bottom-14 left-14 rounded-full bg-black/70 px-10 py-5 text-12 s:text-14 tracking-[-0.03em]">{ratio.label}</span>
                   </div>
                   <p className="mt-10 text-16 s:text-18 tracking-[-0.05em]">{ratio.label}</p>
                   <p className="mt-1 text-13 s:text-14 opacity-50 tracking-[-0.03em]">{ratio.name}</p>
