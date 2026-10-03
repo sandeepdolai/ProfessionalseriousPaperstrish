@@ -6,11 +6,12 @@ import { FEATURED } from "@/lib/projects";
 import { HomeCarousel } from "./HomeCarousel";
 import { Hud } from "./Hud";
 import { MyProjects } from "./MyProjects";
+import { ImportView } from "./ImportView";
 import { ProjectSheet } from "./ProjectSheet";
-import { NewsletterOverlay, ProfileOverlay } from "./Overlays";
+import { ProfileOverlay } from "./Overlays";
 
-type View = "home" | "my" | "project";
-type Overlay = "profile" | "newsletter" | null;
+type View = "home" | "my" | "project" | "import";
+type Overlay = "profile" | null;
 
 export function App() {
   const folio = useFolio();
@@ -19,6 +20,7 @@ export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [sheetEntered, setSheetEntered] = useState(false);
   const [myEntered, setMyEntered] = useState(false);
+  const [importEntered, setImportEntered] = useState(false);
   const [carouselHidden, setCarouselHidden] = useState(false);
   const [returning, setReturning] = useState<string | null>(null);
 
@@ -27,7 +29,6 @@ export function App() {
 
   const project = FEATURED.find((p) => p.slug === projectSlug) ?? null;
 
-  /* ── cursor ball + grabbable ─────────────────────────────────────────── */
   useEffect(() => {
     const mq = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     const desktopish =
@@ -55,16 +56,12 @@ export function App() {
     return () => document.documentElement.classList.remove("grabbable");
   }, [view, overlay]);
 
-  /* ── overlay (profile / newsletter) ──────────────────────────────────── */
   const toggleOverlay = useCallback(
-    (which: "profile" | "newsletter") => {
+    (which: "profile") => {
       setOverlay((prev) => {
         const next = prev === which ? null : which;
-        if (next) {
-          folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
-        } else {
-          folio.closeHole();
-        }
+        if (next) folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
+        else folio.closeHole();
         return next;
       });
     },
@@ -78,24 +75,20 @@ export function App() {
     });
   }, [folio]);
 
-  /* ── view transitions ────────────────────────────────────────────────── */
   const wipeTo = useCallback(
-    async (next: "my" | "home") => {
+    async (next: "my" | "home" | "import") => {
       if (busy.current) return;
       busy.current = true;
       folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
       await wait(500);
-      if (next === "my") {
-        setView("my");
-        setMyEntered(false);
-      } else {
-        setView("home");
-        setMyEntered(false);
-      }
+      setView(next);
+      setMyEntered(false);
+      setImportEntered(false);
       await wait(120);
       folio.closeHole();
       await wait(220);
-      setMyEntered(true);
+      if (next === "my") setMyEntered(true);
+      if (next === "import") setImportEntered(true);
       busy.current = false;
     },
     [folio]
@@ -123,10 +116,8 @@ export function App() {
           setProjectSlug(slug);
           setSheetEntered(true);
         }
-        if (entry) {
-          entry.mesh.visible = false;
-          entry.flying = false;
-        }
+        entry.mesh.visible = false;
+        entry.flying = false;
       } else {
         folio.closeHole();
         setView("project");
@@ -165,30 +156,32 @@ export function App() {
     busy.current = false;
   }, [folio, projectSlug]);
 
-  const switchProject = useCallback(
-    async (slug: string) => {
-      if (busy.current) return;
-      busy.current = true;
-      setSheetEntered(false);
-      await wait(280);
-      setProjectSlug(slug);
-      await wait(80);
-      setSheetEntered(true);
-      busy.current = false;
-    },
-    []
-  );
+  const switchProject = useCallback(async (slug: string) => {
+    if (busy.current) return;
+    busy.current = true;
+    setSheetEntered(false);
+    await wait(280);
+    setProjectSlug(slug);
+    await wait(80);
+    setSheetEntered(true);
+    busy.current = false;
+  }, []);
 
   const goHome = useCallback(() => {
     if (busy.current) return;
     if (overlay) closeOverlay();
-    if (view === "project") closeProject();
-    else if (view === "my") wipeTo("home");
+    else if (view === "project") closeProject();
+    else if (view === "my" || view === "import") wipeTo("home");
   }, [view, overlay, closeOverlay, closeProject, wipeTo]);
 
   const goMy = useCallback(() => {
     if (busy.current || view !== "home" || overlay) return;
     wipeTo("my");
+  }, [view, overlay, wipeTo]);
+
+  const goImport = useCallback(() => {
+    if (busy.current || view !== "home" || overlay) return;
+    wipeTo("import");
   }, [view, overlay, wipeTo]);
 
   return (
@@ -204,6 +197,8 @@ export function App() {
 
       {view === "my" && <MyProjects entered={myEntered} onCreate={() => {}} />}
 
+      {view === "import" && <ImportView entered={importEntered} onClose={goHome} />}
+
       {view === "project" && project && (
         <ProjectSheet
           project={project}
@@ -215,13 +210,12 @@ export function App() {
       )}
 
       <ProfileOverlay open={overlay === "profile"} />
-      <NewsletterOverlay open={overlay === "newsletter"} />
 
       <Hud
         view={view}
         overlay={overlay}
         onProfile={() => toggleOverlay("profile")}
-        onNewsletter={() => toggleOverlay("newsletter")}
+        onImport={goImport}
         onHome={goHome}
         onMy={goMy}
       />
