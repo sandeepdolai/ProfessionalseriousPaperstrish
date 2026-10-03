@@ -26,6 +26,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  const [textLayers,setTextLayers]=useState<TextLayer[]>([]);
  const [selectedTextId,setSelectedTextId]=useState<string|null>(null);
  const [fonts,setFonts]=useState(FONTS);
+ const [selectionBoxSize,setSelectionBoxSize]=useState<{width:number;height:number}|null>(null);
  const [canvasTransform,setCanvasTransform]=useState<CanvasTransform>({scale:1,panX:0,panY:0,rotation:0});
  const canvasRef=useRef<HTMLDivElement>(null);
  const stageRef=useRef<HTMLDivElement>(null);
@@ -78,12 +79,14 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  const updateSelectedText=(patch:Partial<TextLayer>)=>{if(!selectedTextId)return;setTextLayers(c=>c.map(l=>l.id===selectedTextId?{...l,...patch}:l));};
  const deleteSelectedText=()=>{if(!selectedTextId)return;setTextLayers(c=>c.filter(l=>l.id!==selectedTextId));setSelectedTextId(null);setPanelOpen(false);};
  const capture=(e:React.PointerEvent<HTMLElement>)=>{try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}};
+ const lockSelectionBox=(element:HTMLElement)=>{const rect=element.getBoundingClientRect();const sx=Math.max(.01,canvasTransformRef.current.scale);setSelectionBoxSize({width:rect.width/sx,height:rect.height/sx});};
 
  const startMove=(e:React.PointerEvent<HTMLElement>,layer:TextLayer)=>{
   if(activeTool!=="move")return;
   e.preventDefault();
   e.stopPropagation();
   const p=screenToCanvasPercent(e.clientX,e.clientY);
+  lockSelectionBox(e.currentTarget);
   gestureRef.current={type:"move",id:layer.id,startX:p.x,startY:p.y,startLayer:layer,startDistance:0,startAngle:0,anchorX:0,anchorY:0};
   setSelectedTextId(layer.id);
   setActiveTool("move");
@@ -127,7 +130,9 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 
  const endGesture=(e?:React.PointerEvent<HTMLElement>)=>{
   if(e&&e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
+  const g=gestureRef.current;
   gestureRef.current=null;
+  if(g?.type==="scale")setSelectionBoxSize(null);
  };
 
  const startCanvasGesture=()=>{
@@ -239,10 +244,14 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
        onPointerUp={endGesture}
        onPointerCancel={endGesture}
       
-       onClick={()=>{setSelectedTextId(layer.id);setActiveTool("move");setPanelOpen(false);}}
+       onClick={e=>{setSelectedTextId(layer.id);setActiveTool("move");setPanelOpen(false);lockSelectionBox(e.currentTarget);}}
        className={\`absolute select-none px-4 py-2 outline-none \${activeTool==="move"?"cursor-move":"cursor-default"}\`}
        style={{left:\`\${layer.x}%\`,top:\`\${layer.y}%\`,transform:\`translate(-50%,-50%) rotate(\${layer.rotation}deg)\`,fontFamily:layer.fontFamily,fontSize:\`\${layer.fontSize}px\`,color:layer.color,textAlign:layer.align,lineHeight:1.08,whiteSpace:"pre",width:"max-content",maxWidth:"none",wordBreak:"normal",overflow:"visible",transformOrigin:"center center",touchAction:"none",willChange:"transform",userSelect:"none"}}>
-       {selected&&activeTool==="move"&&<div className="pointer-events-auto absolute -inset-6 z-0 rounded-[2px] border-2 border-dashed border-red-500" onPointerDown={e=>startMove(e,layer)} aria-hidden="true"/>}
+       {selected&&activeTool==="move"&&<div
+         className="pointer-events-none absolute z-0 rounded-[2px] border-2 border-dashed border-red-500"
+         style={selectionBoxSize?{width:selectionBoxSize.width,height:selectionBoxSize.height,left:"50%",top:"50%",transform:"translate(-50%,-50%)"}:{left:"-6px",right:"-6px",top:"-6px",bottom:"-6px"}}
+         aria-hidden="true"
+       />}
        <span className="relative z-10 block" onDoubleClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("text");setPanelOpen(true);}}>{layer.text}</span>
        {selected&&activeTool==="move"&&<>
         <span className="pointer-events-none absolute left-1/2 top-[-43px] z-10 h-37 w-px bg-red-500"/>
