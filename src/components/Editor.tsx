@@ -49,6 +49,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 	 const [eraserUndo,setEraserUndo]=useState<EraserUndo[]>([]);
 	 const [brushPreview,setBrushPreview]=useState<{kind:"photo"|"asset";id:string;x:number;y:number}|null>(null);
 	 const [liveEraser,setLiveEraser]=useState<{kind:"photo"|"asset";id:string}|null>(null);
+	 const [renderedEraserLayers,setRenderedEraserLayers]=useState<Record<string,boolean>>({});
 	 const canvasRef=useRef<HTMLDivElement>(null);
  const gestureRef=useRef<Gesture|null>(null);
  const photoGestureRef=useRef<PhotoGesture|null>(null);
@@ -101,6 +102,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
   const src=URL.createObjectURL(file);
   if(selectedPhotoId){
 	  setPhotoLayers(c=>c.map(l=>l.id===selectedPhotoId?{...l,src,name:file.name,eraserStrokes:[]}:l));
+	  setRenderedEraserLayers(cur=>({...cur,[`photo:${selectedPhotoId}`]:false}));
    return;
   }
   const id=`photo-${Date.now()}`;
@@ -257,7 +259,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 		  if(!stroke.points.length)return;ctx.save();ctx.globalCompositeOperation="destination-out";ctx.globalAlpha=stroke.opacity/100;ctx.lineWidth=Math.max(.5,stroke.size/100*width);ctx.lineCap="round";ctx.lineJoin="round";ctx.shadowColor="rgba(0,0,0,1)";ctx.shadowBlur=Math.max(0,(100-stroke.hardness)/100*ctx.lineWidth*.35);ctx.beginPath();const first=stroke.points[0];if(stroke.points.length===1){ctx.arc(first.x/100*width,first.y/100*height,ctx.lineWidth/2,0,Math.PI*2);}else{ctx.moveTo(first.x/100*width,first.y/100*height);for(const point of stroke.points.slice(1))ctx.lineTo(point.x/100*width,point.y/100*height);}ctx.stroke();ctx.restore();
 		 };
 		 const drawImageToCanvas=(canvas:HTMLCanvasElement,img:HTMLImageElement,strokes:EraserStroke[])=>{
-		  const width=Math.max(1,canvas.parentElement?.clientWidth||img.clientWidth);const height=Math.max(1,canvas.parentElement?.clientHeight||img.clientHeight);const dpr=window.devicePixelRatio||1;canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;const ctx=canvas.getContext("2d");if(!ctx)return null;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);const naturalWidth=img.naturalWidth||width;const naturalHeight=img.naturalHeight||height;const scale=Math.min(width/naturalWidth,height/naturalHeight);const drawWidth=naturalWidth*scale;const drawHeight=naturalHeight*scale;ctx.drawImage(img,(width-drawWidth)/2,(height-drawHeight)/2,drawWidth,drawHeight);for(const stroke of strokes)drawCanvasStroke(ctx,stroke,width,height);return {ctx,width,height};
+		  const width=Math.max(1,canvas.parentElement?.clientWidth||img.clientWidth);const height=Math.max(1,canvas.parentElement?.clientHeight||img.clientHeight);const dpr=window.devicePixelRatio||1;canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);const ctx=canvas.getContext("2d");if(!ctx)return null;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);const naturalWidth=img.naturalWidth||width;const naturalHeight=img.naturalHeight||height;const scale=Math.min(width/naturalWidth,height/naturalHeight);const drawWidth=naturalWidth*scale;const drawHeight=naturalHeight*scale;ctx.drawImage(img,(width-drawWidth)/2,(height-drawHeight)/2,drawWidth,drawHeight);for(const stroke of strokes)drawCanvasStroke(ctx,stroke,width,height);return {ctx,width,height};
 		 };
 		 const renderLiveEraserFrame=(active:LiveEraser)=>{
 		  const point=active.pendingPoint;if(point.x!==active.lastRenderedPoint.x||point.y!==active.lastRenderedPoint.y){drawCanvasStroke(active.ctx,{...active.stroke,points:[active.lastRenderedPoint,point]},active.width,active.height);active.lastRenderedPoint=point;}
@@ -272,17 +274,20 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 		  if(activeTool!=="eraser")return;const active=eraserStrokeRef.current;if(!active||active.pointerId!==e.pointerId)return;e.preventDefault();const point=pointerToLayerPoint(e);active.pendingPoint=point;active.stroke.points.push(point);scheduleLiveEraserFrame();
 		 };
 		 const endErase=(e?:React.PointerEvent<HTMLElement>)=>{
-		  if(e&&e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);const active=eraserStrokeRef.current;if(!active)return;if(active.frame!==null){cancelAnimationFrame(active.frame);active.frame=null;}renderLiveEraserFrame(active);const finalStroke={...active.stroke,points:active.stroke.points.map(point=>({...point}))};setEraserUndo(cur=>[...cur,{kind:active.kind,id:active.id,strokeId:finalStroke.id}]);if(active.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:[...layer.eraserStrokes,finalStroke]}:layer));else setAssetLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:[...layer.eraserStrokes,finalStroke]}:layer));eraserStrokeRef.current=null;setLiveEraser(null);setBrushPreview(null);
+		  if(e&&e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);const active=eraserStrokeRef.current;if(!active)return;if(active.frame!==null){cancelAnimationFrame(active.frame);active.frame=null;}renderLiveEraserFrame(active);const finalStroke={...active.stroke,points:active.stroke.points.map(point=>({...point}))};const layerKey=`${active.kind}:${active.id}`;setEraserUndo(cur=>[...cur,{kind:active.kind,id:active.id,strokeId:finalStroke.id}]);if(active.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:[...layer.eraserStrokes,finalStroke]}:layer));else setAssetLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:[...layer.eraserStrokes,finalStroke]}:layer));setRenderedEraserLayers(cur=>({...cur,[layerKey]:true}));eraserStrokeRef.current=null;setLiveEraser(null);setBrushPreview(null);
 		 };
 	 const undoErase=()=>{
 	  const last=eraserUndo[eraserUndo.length-1];if(!last)return;
 	  if(last.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===last.id?{...layer,eraserStrokes:layer.eraserStrokes.filter(stroke=>stroke.id!==last.strokeId)}:layer));
 	  else setAssetLayers(cur=>cur.map(layer=>layer.id===last.id?{...layer,eraserStrokes:layer.eraserStrokes.filter(stroke=>stroke.id!==last.strokeId)}:layer));
+	  setRenderedEraserLayers(cur=>({...cur,[`${last.kind}:${last.id}`]:false}));
 	  setEraserUndo(cur=>cur.slice(0,-1));
 	 };
 	 const resetErase=()=>{
 	  if(selectedPhoto)setPhotoLayers(cur=>cur.map(layer=>layer.id===selectedPhoto.id?{...layer,eraserStrokes:[]}:layer));
 	  if(selectedAsset)setAssetLayers(cur=>cur.map(layer=>layer.id===selectedAsset.id?{...layer,eraserStrokes:[]}:layer));
+	  if(selectedPhoto)setRenderedEraserLayers(cur=>({...cur,[`photo:${selectedPhoto.id}`]:false}));
+	  if(selectedAsset)setRenderedEraserLayers(cur=>({...cur,[`asset:${selectedAsset.id}`]:false}));
 	  setEraserUndo(cur=>cur.filter(item=>item.id!==(selectedPhoto?.id??selectedAsset?.id)));
 	 };
 
@@ -316,6 +321,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 
    {photoLayers.map(layer=>{
     const selected=layer.id===selectedPhotoId;
+    const layerKey=`photo:${layer.id}`;const canvasVisible=Boolean(renderedEraserLayers[layerKey]||(liveEraser?.kind==="photo"&&liveEraser.id===layer.id));
     return <div key={layer.id} className="absolute inset-0 pointer-events-none">
      <div
       className="absolute select-none pointer-events-auto"
@@ -328,8 +334,8 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
       data-rotation={layer.rotation}
       style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,opacity:layer.opacity,touchAction:"none",zIndex:selected?15:5}}
      >
-      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(`photo:${layer.id}`,layer.eraserStrokes),opacity:liveEraser?.kind==="photo"&&liveEraser.id===layer.id?0:1}}/>
-      <canvas data-eraser-canvas={`photo:${layer.id}`} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-[10px] object-contain" style={{opacity:liveEraser?.kind==="photo"&&liveEraser.id===layer.id?1:0}}/>
+      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(layerKey,layer.eraserStrokes),opacity:canvasVisible?0:1}}/>
+      <canvas data-eraser-canvas={layerKey} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 h-full w-full rounded-[10px]" style={{opacity:canvasVisible?1:0}}/>
       {activeTool==="eraser"&&brushPreview?.kind==="photo"&&brushPreview.id===layer.id&&<span data-eraser-preview={`photo:${layer.id}`} className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
      </div>
      {selected&&(activeTool==="photo"||activeTool==="move")&&<div
@@ -348,13 +354,14 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 
    {assetLayers.map(layer=>{
     const selected=layer.id===selectedAssetId;
+    const layerKey=`asset:${layer.id}`;const canvasVisible=Boolean(renderedEraserLayers[layerKey]||(liveEraser?.kind==="asset"&&liveEraser.id===layer.id));
     return <div key={layer.id} className="absolute inset-0 pointer-events-none">
      <div className="absolute select-none pointer-events-auto" onPointerDown={e=>activeTool==="eraser"?startErase("asset",layer.id,layer.eraserStrokes,e):startAssetMove(e,layer)} onPointerMove={e=>activeTool==="eraser"?moveErase(e):moveAssetGesture(e)} onPointerUp={e=>activeTool==="eraser"?endErase(e):endAssetGesture(e)} onPointerCancel={e=>activeTool==="eraser"?endErase(e):endAssetGesture(e)} onPointerLeave={()=>activeTool==="eraser"&&setBrushPreview(null)}
       onClick={e=>{e.stopPropagation();setSelectedAssetId(layer.id);setSelectedTextId(null);setSelectedPhotoId(null);if(activeTool!=="eraser")setActiveTool("move");if(activeTool!=="eraser")setPanelOpen(false);}}
       data-rotation={layer.rotation}
       style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,opacity:layer.opacity,touchAction:"none",zIndex:selected?18:7}}>
-      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(`asset:${layer.id}`,layer.eraserStrokes),opacity:liveEraser?.kind==="asset"&&liveEraser.id===layer.id?0:1}}/>
-      <canvas data-eraser-canvas={`asset:${layer.id}`} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-[10px] object-contain" style={{opacity:liveEraser?.kind==="asset"&&liveEraser.id===layer.id?1:0}}/>
+      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(layerKey,layer.eraserStrokes),opacity:canvasVisible?0:1}}/>
+      <canvas data-eraser-canvas={layerKey} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 h-full w-full rounded-[10px]" style={{opacity:canvasVisible?1:0}}/>
       {activeTool==="eraser"&&brushPreview?.kind==="asset"&&brushPreview.id===layer.id&&<span data-eraser-preview={`asset:${layer.id}`} className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
      </div>
      {selected&&activeTool!=="eraser"&&<div className="absolute pointer-events-auto z-30 border-2 border-dashed border-red-500 rounded-[2px]" style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,transformOrigin:"center center",touchAction:"none"}} onPointerDown={e=>startAssetMove(e,layer)} onPointerMove={moveAssetGesture} onPointerUp={endAssetGesture} onPointerCancel={endAssetGesture}>
