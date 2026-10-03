@@ -184,10 +184,6 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
   if(canvasPointersRef.current.size<2)canvasGestureRef.current=null;
  };
 
- const resetCanvasView=()=>{
-  setCanvasView({scale:1,panX:0,panY:0,rotation:0});
- };
-
  const importFont=async(file:File|undefined)=>{
   if(!file)return;
   const family=file.name.replace(/\.[^\/.]+$/,"")||\`Imported Font \${fonts.length+1}\`;
@@ -195,7 +191,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  };
 
  return <main className={\`fixed inset-0 z-50 overflow-hidden bg-[#050505] text-white transition-opacity duration-500 \${entered?"opacity-100":"opacity-0"}\`} aria-label="Paper Stish editor">
-  <header className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-20 py-20 s:px-30 s:py-25"><button type="button" onClick={onClose} className="group inline-flex items-center gap-10 text-14 text-white/75 hover:text-white"><span className="inline-flex size-32 items-center justify-center rounded-full bg-white/8">×</span><span className="hidden s:inline">MY</span></button><div className="absolute left-1/2 -translate-x-1/2 text-center"><p className="text-16">Paper Stish</p><p className="mt-2 text-11 text-white/40">{importedFileName||ratio}</p></div><div className="flex items-center gap-8"><button type="button" onClick={resetCanvasView} className="rounded-full border border-white/10 bg-white/6 px-12 py-8 text-11 text-white/60">Reset view</button><button type="button" className="rounded-full bg-white px-18 py-9 text-13 text-black" onClick={()=>window.dispatchEvent(new CustomEvent("paper-stish-export"))}>Export</button></div></header>
+  <header className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-20 py-20 s:px-30 s:py-25"><button type="button" onClick={onClose} className="group inline-flex items-center gap-10 text-14 text-white/75 hover:text-white"><span className="inline-flex size-32 items-center justify-center rounded-full bg-white/8">×</span><span className="hidden s:inline">MY</span></button><div className="absolute left-1/2 -translate-x-1/2 text-center"><p className="text-16">Paper Stish</p><p className="mt-2 text-11 text-white/40">{importedFileName||ratio}</p></div><div className="flex items-center gap-8"><button type="button" className="rounded-full bg-white px-18 py-9 text-13 text-black" onClick={()=>window.dispatchEvent(new CustomEvent("paper-stish-export"))}>Export</button></div></header>
 
   <div ref={stageRef} className="absolute inset-0 flex items-center justify-center px-18 pb-100 pt-85 touch-none" onPointerDown={startCanvasPointer} onPointerMove={moveCanvasPointer} onPointerUp={endCanvasPointer} onPointerCancel={endCanvasPointer}>
    <div className="relative flex h-full w-full items-center justify-center">
@@ -209,12 +205,12 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
        onPointerMove={moveGesture}
        onPointerUp={endGesture}
        onPointerCancel={endGesture}
-       onDoubleClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("text");setPanelOpen(true);}}
+      
        onClick={()=>{setSelectedTextId(layer.id);setActiveTool("move");setPanelOpen(false);}}
        className={\`absolute select-none px-4 py-2 outline-none \${activeTool==="move"?"cursor-move":"cursor-default"}\`}
        style={{left:\`\${layer.x}%\`,top:\`\${layer.y}%\`,transform:\`translate(-50%,-50%) rotate(\${layer.rotation}deg)\`,fontFamily:layer.fontFamily,fontSize:\`\${layer.fontSize}px\`,color:layer.color,textAlign:layer.align,lineHeight:1.08,whiteSpace:"pre",width:"max-content",maxWidth:"none",wordBreak:"normal",overflow:"visible",transformOrigin:"center center",touchAction:"none",willChange:"transform",userSelect:"none"}}>
        {selected&&activeTool==="move"&&<div className="pointer-events-auto absolute -inset-6 z-0 rounded-[2px] border-2 border-dashed border-red-500" onPointerDown={e=>startMove(e,layer)} aria-hidden="true"/>}
-       <span className="relative z-10 block">{layer.text}</span>
+       <span className="relative z-10 block" onDoubleClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("text");setPanelOpen(true);}}>{layer.text}</span>
        {selected&&activeTool==="move"&&<>
         <span className="pointer-events-none absolute left-1/2 top-[-43px] z-10 h-37 w-px bg-red-500"/>
         <button aria-label="Rotate text" type="button" onPointerDown={e=>startRotate(e,layer)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} className="absolute left-1/2 top-[-58px] z-20 flex size-32 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-black text-white shadow-md"><span>↻</span></button>
