@@ -16,6 +16,8 @@ type AssetGesture={type:"move"|"scale"|"rotate";id:string;startX:number;startY:n
 type Gesture={type:"move"|"scale"|"rotate";id:string;startX:number;startY:number;startLayer:TextLayer;startDistance:number;startAngle:number;anchorX:number;anchorY:number;startFrame?:{width:number;height:number}};
 type PhotoGesture={type:"move"|"scale"|"rotate";id:string;startX:number;startY:number;startLayer:PhotoLayer;startDistance:number;startAngle:number;anchorX:number;anchorY:number};
 type EraserUndo={kind:"photo"|"asset";id:string;strokeId:string};
+type LiveEraser={kind:"photo"|"asset";id:string;pointerId:number;stroke:EraserStroke;pendingPoint:EraserPoint;lastRenderedPoint:EraserPoint;canvas:HTMLCanvasElement;ctx:CanvasRenderingContext2D;width:number;height:number;frame:number|null};
+const MASK_STYLE_CACHE=new Map<string,{signature:string;style:CSSProperties}>();
 const TOOLS:Array<{id:Tool;label:string;icon:string}>=[{id:"move",label:"Move",icon:"✦"},{id:"text",label:"Text",icon:"T"},{id:"photo",label:"Photo",icon:"▧"},{id:"sticker",label:"Sticker",icon:"◇"},{id:"eraser",label:"Eraser",icon:"⌁"},{id:"stroke",label:"Stroke",icon:"◌"},{id:"layers",label:"Layers",icon:"≡"}];
 const FONTS=["Inter","Arial","Georgia","Times New Roman","Courier New"];
 const STICKERS=[
@@ -46,6 +48,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 	 const [eraserOpacity,setEraserOpacity]=useState(100);
 	 const [eraserUndo,setEraserUndo]=useState<EraserUndo[]>([]);
 	 const [brushPreview,setBrushPreview]=useState<{kind:"photo"|"asset";id:string;x:number;y:number}|null>(null);
+	 const [liveEraser,setLiveEraser]=useState<{kind:"photo"|"asset";id:string}|null>(null);
 	 const canvasRef=useRef<HTMLDivElement>(null);
  const gestureRef=useRef<Gesture|null>(null);
  const photoGestureRef=useRef<PhotoGesture|null>(null);
@@ -53,7 +56,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  const photoInputRef=useRef<HTMLInputElement>(null);
 	 const assetInputRef=useRef<HTMLInputElement>(null);
 	 const textRefs=useRef<Record<string,HTMLDivElement|null>>({});
-	 const eraserStrokeRef=useRef<{kind:"photo"|"asset";id:string;stroke:EraserStroke;pointerId:number}|null>(null);
+	 const eraserStrokeRef=useRef<LiveEraser|null>(null);
  const canvasStyle=useMemo(()=>({aspectRatio:({"9:16":"9 / 16","16:9":"16 / 9","4:5":"4 / 5","1:1":"1 / 1"} as Record<EditorRatio,string>)[ratio]}),[ratio]);
  const selectedText=textLayers.find(l=>l.id===selectedTextId)??null;
  const selectedPhoto=photoLayers.find(l=>l.id===selectedPhotoId)??null;
@@ -80,13 +83,15 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  const deleteSelectedText=()=>{if(!selectedTextId)return;setTextLayers(c=>c.filter(l=>l.id!==selectedTextId));setSelectedTextId(null);setPanelOpen(false);setSelectionFrame(null);};
  const updateSelectedPhoto=(patch:Partial<PhotoLayer>)=>{if(!selectedPhotoId)return;setPhotoLayers(c=>c.map(l=>l.id===selectedPhotoId?{...l,...patch}:l));};
  const deleteSelectedPhoto=()=>{if(!selectedPhotoId)return;setPhotoLayers(c=>c.filter(l=>l.id!==selectedPhotoId));setSelectedPhotoId(null);setPanelOpen(false);};
-	 const maskStyle=(strokes:EraserStroke[]):CSSProperties=>{
+	 const maskStyle=(cacheKey:string,strokes:EraserStroke[]):CSSProperties=>{
 	  if(!strokes.length)return {};
+	  const signature=strokes.map(stroke=>`${stroke.id}:${stroke.points.length}:${stroke.size}:${stroke.hardness}:${stroke.opacity}`).join("|");
+	  const cached=MASK_STYLE_CACHE.get(cacheKey);if(cached?.signature===signature)return cached.style;
 	  const defs=strokes.map((stroke,index)=>`<filter id="b${index}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${Math.max(0,(100-stroke.hardness)/100)*stroke.size*.35}"/></filter>`).join("");
 	  const paths=strokes.map((stroke,index)=>{const d=stroke.points.map((p,i)=>`${i?"L":"M"}${p.x.toFixed(3)} ${p.y.toFixed(3)}`).join(" ");return `<path d="${d}" fill="none" stroke="black" stroke-opacity="${(stroke.opacity/100).toFixed(3)}" stroke-width="${stroke.size.toFixed(3)}" stroke-linecap="round" stroke-linejoin="round" filter="url(#b${index})"/>`;}).join("");
 	  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>${defs}</defs><mask id="m"><rect width="100" height="100" fill="white"/>${paths}</mask><rect width="100" height="100" fill="white" mask="url(#m)"/></svg>`;
-  const url=`url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-  return {maskImage:url,WebkitMaskImage:url,maskMode:"luminance",maskSize:"100% 100%",WebkitMaskSize:"100% 100%"};
+	  const url=`url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+	  const style={maskImage:url,WebkitMaskImage:url,maskMode:"luminance",maskSize:"100% 100%",WebkitMaskSize:"100% 100%"};MASK_STYLE_CACHE.set(cacheKey,{signature,style});return style;
 	 };
 	 const pointerToLayerPoint=(e:React.PointerEvent<HTMLElement>)=>{
 	  const el=e.currentTarget;const rect=el.getBoundingClientRect();const width=Math.max(1,el.clientWidth);const height=Math.max(1,el.clientHeight);const rad=(Number(el.dataset.rotation)||0)*Math.PI/180;const dx=e.clientX-(rect.left+rect.width/2);const dy=e.clientY-(rect.top+rect.height/2);const x=dx*Math.cos(rad)+dy*Math.sin(rad)+width/2;const y=-dx*Math.sin(rad)+dy*Math.cos(rad)+height/2;return {x:Math.max(0,Math.min(100,x/width*100)),y:Math.max(0,Math.min(100,y/height*100))};
@@ -248,24 +253,27 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
   }
  };
 	 const endAssetGesture=(e?:React.PointerEvent<HTMLElement>)=>{if(e&&e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);assetGestureRef.current=null;};
-	 const startErase=(kind:"photo"|"asset",id:string,e:React.PointerEvent<HTMLElement>)=>{
-	  if(activeTool!=="eraser")return;
-	  e.preventDefault();e.stopPropagation();
-	  const point=pointerToLayerPoint(e);const element=e.currentTarget;const width=Math.max(1,element.clientWidth);const stroke={id:`erase-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,points:[point],size:Math.max(.25,eraserSize/width*100),hardness:eraserHardness,opacity:eraserOpacity};
-	  eraserStrokeRef.current={kind,id,stroke,pointerId:e.pointerId};setBrushPreview({kind,id,x:point.x,y:point.y});capture(e);
-	  if(kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===id?{...layer,eraserStrokes:[...layer.eraserStrokes,stroke]}:layer));
-	  else setAssetLayers(cur=>cur.map(layer=>layer.id===id?{...layer,eraserStrokes:[...layer.eraserStrokes,stroke]}:layer));
-	 };
-	 const moveErase=(e:React.PointerEvent<HTMLElement>)=>{
-	  if(activeTool!=="eraser")return;
-	  const point=pointerToLayerPoint(e);const active=eraserStrokeRef.current;setBrushPreview(active?{kind:active.kind,id:active.id,x:point.x,y:point.y}:brushPreview);
-	  if(!active||active.pointerId!==e.pointerId)return;e.preventDefault();const stroke={...active.stroke,points:[...active.stroke.points,point]};eraserStrokeRef.current={...active,stroke};
-	  if(active.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:layer.eraserStrokes.map(item=>item.id===stroke.id?stroke:item)}:layer));
-	  else setAssetLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:layer.eraserStrokes.map(item=>item.id===stroke.id?stroke:item)}:layer));
-	 };
-	 const endErase=(e?:React.PointerEvent<HTMLElement>)=>{
-	  if(e&&e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);const active=eraserStrokeRef.current;if(active){setEraserUndo(cur=>[...cur,{kind:active.kind,id:active.id,strokeId:active.stroke.id}]);}eraserStrokeRef.current=null;
-	 };
+		 const drawCanvasStroke=(ctx:CanvasRenderingContext2D,stroke:EraserStroke,width:number,height:number)=>{
+		  if(!stroke.points.length)return;ctx.save();ctx.globalCompositeOperation="destination-out";ctx.globalAlpha=stroke.opacity/100;ctx.lineWidth=Math.max(.5,stroke.size/100*width);ctx.lineCap="round";ctx.lineJoin="round";ctx.shadowColor="rgba(0,0,0,1)";ctx.shadowBlur=Math.max(0,(100-stroke.hardness)/100*ctx.lineWidth*.35);ctx.beginPath();const first=stroke.points[0];if(stroke.points.length===1){ctx.arc(first.x/100*width,first.y/100*height,ctx.lineWidth/2,0,Math.PI*2);}else{ctx.moveTo(first.x/100*width,first.y/100*height);for(const point of stroke.points.slice(1))ctx.lineTo(point.x/100*width,point.y/100*height);}ctx.stroke();ctx.restore();
+		 };
+		 const drawImageToCanvas=(canvas:HTMLCanvasElement,img:HTMLImageElement,strokes:EraserStroke[])=>{
+		  const width=Math.max(1,canvas.parentElement?.clientWidth||img.clientWidth);const height=Math.max(1,canvas.parentElement?.clientHeight||img.clientHeight);const dpr=window.devicePixelRatio||1;canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;const ctx=canvas.getContext("2d");if(!ctx)return null;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);const naturalWidth=img.naturalWidth||width;const naturalHeight=img.naturalHeight||height;const scale=Math.min(width/naturalWidth,height/naturalHeight);const drawWidth=naturalWidth*scale;const drawHeight=naturalHeight*scale;ctx.drawImage(img,(width-drawWidth)/2,(height-drawHeight)/2,drawWidth,drawHeight);for(const stroke of strokes)drawCanvasStroke(ctx,stroke,width,height);return {ctx,width,height};
+		 };
+		 const renderLiveEraserFrame=(active:LiveEraser)=>{
+		  const point=active.pendingPoint;if(point.x!==active.lastRenderedPoint.x||point.y!==active.lastRenderedPoint.y){drawCanvasStroke(active.ctx,{...active.stroke,points:[active.lastRenderedPoint,point]},active.width,active.height);active.lastRenderedPoint=point;}
+		  const preview=document.querySelector(`[data-eraser-preview="${active.kind}:${active.id}"]`);if(preview instanceof HTMLElement){preview.style.left=`${point.x}%`;preview.style.top=`${point.y}%`;}
+		 };
+		 const scheduleLiveEraserFrame=()=>{const active=eraserStrokeRef.current;if(!active||active.frame!==null)return;active.frame=requestAnimationFrame(()=>{active.frame=null;renderLiveEraserFrame(active);});};
+		 const startErase=(kind:"photo"|"asset",id:string,strokes:EraserStroke[],e:React.PointerEvent<HTMLElement>)=>{
+		  if(activeTool!=="eraser")return;e.preventDefault();e.stopPropagation();const canvas=e.currentTarget.querySelector("canvas");const img=e.currentTarget.querySelector("img");if(!(canvas instanceof HTMLCanvasElement)||!(img instanceof HTMLImageElement))return;const prepared=drawImageToCanvas(canvas,img,strokes);if(!prepared)return;
+		  const point=pointerToLayerPoint(e);const width=Math.max(1,e.currentTarget.clientWidth);const stroke={id:`erase-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,points:[point],size:Math.max(.25,eraserSize/width*100),hardness:eraserHardness,opacity:eraserOpacity};const active:LiveEraser={kind,id,pointerId:e.pointerId,stroke,pendingPoint:point,lastRenderedPoint:point,canvas,ctx:prepared.ctx,width:prepared.width,height:prepared.height,frame:null};eraserStrokeRef.current=active;setLiveEraser({kind,id});setBrushPreview({kind,id,x:point.x,y:point.y});capture(e);drawCanvasStroke(active.ctx,stroke,active.width,active.height);
+		 };
+		 const moveErase=(e:React.PointerEvent<HTMLElement>)=>{
+		  if(activeTool!=="eraser")return;const active=eraserStrokeRef.current;if(!active||active.pointerId!==e.pointerId)return;e.preventDefault();const point=pointerToLayerPoint(e);active.pendingPoint=point;active.stroke.points.push(point);scheduleLiveEraserFrame();
+		 };
+		 const endErase=(e?:React.PointerEvent<HTMLElement>)=>{
+		  if(e&&e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);const active=eraserStrokeRef.current;if(!active)return;if(active.frame!==null){cancelAnimationFrame(active.frame);active.frame=null;}renderLiveEraserFrame(active);const finalStroke={...active.stroke,points:active.stroke.points.map(point=>({...point}))};setEraserUndo(cur=>[...cur,{kind:active.kind,id:active.id,strokeId:finalStroke.id}]);if(active.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:[...layer.eraserStrokes,finalStroke]}:layer));else setAssetLayers(cur=>cur.map(layer=>layer.id===active.id?{...layer,eraserStrokes:[...layer.eraserStrokes,finalStroke]}:layer));eraserStrokeRef.current=null;setLiveEraser(null);setBrushPreview(null);
+		 };
 	 const undoErase=()=>{
 	  const last=eraserUndo[eraserUndo.length-1];if(!last)return;
 	  if(last.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===last.id?{...layer,eraserStrokes:layer.eraserStrokes.filter(stroke=>stroke.id!==last.strokeId)}:layer));
@@ -311,7 +319,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
     return <div key={layer.id} className="absolute inset-0 pointer-events-none">
      <div
       className="absolute select-none pointer-events-auto"
-      onPointerDown={e=>activeTool==="eraser"?startErase("photo",layer.id,e):startPhotoMove(e,layer)}
+      onPointerDown={e=>activeTool==="eraser"?startErase("photo",layer.id,layer.eraserStrokes,e):startPhotoMove(e,layer)}
       onPointerMove={e=>activeTool==="eraser"?moveErase(e):movePhotoGesture(e)}
       onPointerUp={e=>activeTool==="eraser"?endErase(e):endPhotoGesture(e)}
       onPointerCancel={e=>activeTool==="eraser"?endErase(e):endPhotoGesture(e)}
@@ -320,8 +328,9 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
       data-rotation={layer.rotation}
       style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,opacity:layer.opacity,touchAction:"none",zIndex:selected?15:5}}
      >
-      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={maskStyle(layer.eraserStrokes)}/>
-      {activeTool==="eraser"&&brushPreview?.kind==="photo"&&brushPreview.id===layer.id&&<span className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
+      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(`photo:${layer.id}`,layer.eraserStrokes),opacity:liveEraser?.kind==="photo"&&liveEraser.id===layer.id?0:1}}/>
+      <canvas data-eraser-canvas={`photo:${layer.id}`} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-[10px] object-contain" style={{opacity:liveEraser?.kind==="photo"&&liveEraser.id===layer.id?1:0}}/>
+      {activeTool==="eraser"&&brushPreview?.kind==="photo"&&brushPreview.id===layer.id&&<span data-eraser-preview={`photo:${layer.id}`} className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
      </div>
      {selected&&(activeTool==="photo"||activeTool==="move")&&<div
       className="absolute pointer-events-auto z-30 border-2 border-dashed border-red-500 rounded-[2px]"
@@ -340,12 +349,13 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
    {assetLayers.map(layer=>{
     const selected=layer.id===selectedAssetId;
     return <div key={layer.id} className="absolute inset-0 pointer-events-none">
-     <div className="absolute select-none pointer-events-auto" onPointerDown={e=>activeTool==="eraser"?startErase("asset",layer.id,e):startAssetMove(e,layer)} onPointerMove={e=>activeTool==="eraser"?moveErase(e):moveAssetGesture(e)} onPointerUp={e=>activeTool==="eraser"?endErase(e):endAssetGesture(e)} onPointerCancel={e=>activeTool==="eraser"?endErase(e):endAssetGesture(e)} onPointerLeave={()=>activeTool==="eraser"&&setBrushPreview(null)}
+     <div className="absolute select-none pointer-events-auto" onPointerDown={e=>activeTool==="eraser"?startErase("asset",layer.id,layer.eraserStrokes,e):startAssetMove(e,layer)} onPointerMove={e=>activeTool==="eraser"?moveErase(e):moveAssetGesture(e)} onPointerUp={e=>activeTool==="eraser"?endErase(e):endAssetGesture(e)} onPointerCancel={e=>activeTool==="eraser"?endErase(e):endAssetGesture(e)} onPointerLeave={()=>activeTool==="eraser"&&setBrushPreview(null)}
       onClick={e=>{e.stopPropagation();setSelectedAssetId(layer.id);setSelectedTextId(null);setSelectedPhotoId(null);if(activeTool!=="eraser")setActiveTool("move");if(activeTool!=="eraser")setPanelOpen(false);}}
       data-rotation={layer.rotation}
       style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,opacity:layer.opacity,touchAction:"none",zIndex:selected?18:7}}>
-      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={maskStyle(layer.eraserStrokes)}/>
-      {activeTool==="eraser"&&brushPreview?.kind==="asset"&&brushPreview.id===layer.id&&<span className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
+      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(`asset:${layer.id}`,layer.eraserStrokes),opacity:liveEraser?.kind==="asset"&&liveEraser.id===layer.id?0:1}}/>
+      <canvas data-eraser-canvas={`asset:${layer.id}`} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-[10px] object-contain" style={{opacity:liveEraser?.kind==="asset"&&liveEraser.id===layer.id?1:0}}/>
+      {activeTool==="eraser"&&brushPreview?.kind==="asset"&&brushPreview.id===layer.id&&<span data-eraser-preview={`asset:${layer.id}`} className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
      </div>
      {selected&&activeTool!=="eraser"&&<div className="absolute pointer-events-auto z-30 border-2 border-dashed border-red-500 rounded-[2px]" style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,transformOrigin:"center center",touchAction:"none"}} onPointerDown={e=>startAssetMove(e,layer)} onPointerMove={moveAssetGesture} onPointerUp={endAssetGesture} onPointerCancel={endAssetGesture}>
       <span className="pointer-events-none absolute left-1/2 top-[-37px] z-10 h-37 w-px bg-red-500 -translate-x-1/2"/>
