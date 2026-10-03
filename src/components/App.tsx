@@ -180,7 +180,7 @@ export function App() {
   }, [view, overlay, wipeTo]);
 
   const goImport = useCallback(() => {
-    if (busy.current || view !== "home" || overlay) return;
+    if (busy.current || overlay || (view !== "home" && view !== "my")) return;
     wipeTo("import");
   }, [view, overlay, wipeTo]);
 
