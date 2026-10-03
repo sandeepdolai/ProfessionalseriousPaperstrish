@@ -2,7 +2,6 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from "react";
-import { SITE } from "@/lib/projects";
 import { ease, tween } from "@/gl/react";
 
 interface OverlayProps {
@@ -24,63 +23,122 @@ function useReveal(open: boolean) {
         const base = parseFloat(p.dataset.delay || "0");
         p.style.opacity = "0";
         p.style.transform = "translateY(0.8rem)";
-        tween(0, 1, 0.7, ease.expoOut, (v) => {
-          p.style.opacity = String(v);
-          p.style.transform = `translateY(${(1 - v) * 0.8}rem)`;
-        }, undefined);
-        void base;
-        void i;
+        window.setTimeout(() => {
+          tween(0, 1, 0.7, ease.expoOut, (v) => {
+            p.style.opacity = String(v);
+            p.style.transform = `translateY(${(1 - v) * 0.8}rem)`;
+          }, undefined);
+        }, base * 1000 + i * 35);
       });
     } else if (!open && shown) {
       setShown(false);
     }
-     
-  }, [open]);
+  }, [open, shown]);
   return ref;
+}
+
+function UserIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-17" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5.5 19c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SparkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-17" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="m12 2 1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5L12 2Z" strokeLinejoin="round" />
+      <path d="M19 16v6M16 19h6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProfileAction({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      className="pointer-events-auto flex h-52 w-full items-center justify-center gap-10 rounded-full border border-white/12 px-20 text-white transition-all duration-300 ease-out hover:border-white/25 hover:bg-white/[0.06] active:scale-[0.99]"
+    >
+      {icon}
+      <span className="text-14 tracking-[-0.02em]">{children}</span>
+    </button>
+  );
 }
 
 export function ProfileOverlay({ open }: OverlayProps) {
   const ref = useReveal(open);
+
   return (
     <div
       ref={ref}
-      className="pointer-events-none fixed left-1/2 top-1/2 z-40 w-420 -translate-x-1/2 -translate-y-1/2 s:w-600"
+      className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center px-15 s:px-25"
       style={{ visibility: open ? "visible" : "hidden" }}
     >
-      <div className="absolute inset-x-20 top-1/2 flex -translate-y-1/2 flex-col items-center text-center text-white">
-        <p
-          data-reveal
-          className="text-14 leading-14 tracking-[-0.02em] max-w-[35rem] s:max-w-[45rem]"
-        >
-          {" "}
-          {SITE.summary} {SITE.about}{" "}
-        </p>
-        <p data-reveal className="label opacity-60 mt-25 s:mt-30">
-          {" "}
-          {SITE.awards}{" "}
-        </p>
-        <ul className="flex list-none flex-wrap items-center justify-center gap-x-20 gap-y-8 mt-25 s:mt-30">
-          {SITE.profiles.map((p) => (
-            <li key={p.title} data-reveal>
-              <a
-                href={p.url}
-                target="_blank"
-                rel="noopener"
-                className="label pointer-events-auto block transition-opacity duration-300 hover:opacity-60"
-              >
-                {p.title}
-              </a>
-            </li>
-          ))}
-          <li data-reveal>
-            <a
-              href={`mailto:${SITE.email}`}
-              className="label pointer-events-auto block transition-opacity duration-300 hover:opacity-60"
+      <div
+        data-reveal
+        className="pointer-events-auto w-full max-w-[30rem] overflow-hidden rounded-[2rem] border border-white/10 bg-[#151515]/95 text-white shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+      >
+        <div className="flex items-center justify-between px-25 pb-18 pt-25 s:px-30 s:pb-20 s:pt-30">
+          <div className="min-w-0">
+            <p className="label opacity-55">PAPER STISH</p>
+            <h2 className="mt-7 truncate text-20 leading-20 tracking-[-0.04em]">Your account</h2>
+          </div>
+          <div className="flex size-40 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
+            <UserIcon />
+          </div>
+        </div>
+
+        <div className="px-15 pb-15 s:px-20 s:pb-20">
+          <div data-reveal className="rounded-[1.55rem] bg-[#272727] p-20 s:p-25">
+            <div className="flex items-start gap-12">
+              <div className="flex size-38 shrink-0 items-center justify-center rounded-full bg-white text-black">
+                <SparkIcon />
+              </div>
+              <div className="min-w-0">
+                <p className="text-15 leading-17 tracking-[-0.02em]">Free Experience</p>
+                <p className="mt-5 text-12 leading-15 tracking-[-0.01em] text-white/50">
+                  Upgrade to unlock the full Paper Stish experience.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="pointer-events-auto mt-18 h-48 w-full rounded-full bg-white text-black text-14 tracking-[-0.02em] transition-transform duration-300 hover:scale-[1.01] active:scale-[0.99]"
             >
-              Email
-            </a>
-          </li>
-        </ul>
+              Upgrade — $4.99/month
+            </button>
+          </div>
+
+          <div data-reveal className="mt-10 flex flex-col gap-8">
+            <ProfileAction icon={<UserIcon />}>My Projects</ProfileAction>
+            <ProfileAction>My Templates</ProfileAction>
+            <ProfileAction>My Fonts</ProfileAction>
+            <ProfileAction>Manage subscription</ProfileAction>
+          </div>
+
+          <div data-reveal className="mt-15 border-t border-white/10 pt-15 text-center">
+            <button
+              type="button"
+              className="pointer-events-auto text-12 tracking-[-0.01em] text-white/45 transition-colors duration-300 hover:text-white/80"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+
+        <div className="px-25 pb-22 text-center s:px-30 s:pb-25">
+          <p className="label opacity-35">Your projects stay on your device.</p>
+        </div>
       </div>
     </div>
   );
@@ -128,20 +186,10 @@ export function NewsletterOverlay({ open }: OverlayProps) {
       style={{ visibility: open ? "visible" : "hidden" }}
     >
       <div className="absolute inset-x-20 top-1/2 flex -translate-y-1/2 flex-col items-center text-center text-white">
-        <p
-          data-reveal
-          className="text-14 leading-14 tracking-[-0.02em] max-w-[30rem] s:max-w-[32.5rem]"
-        >
-          {" "}
-          An occasional newsletter with insights and thoughts from a design engineer, drawn from
-          over a decade of freelancing.{" "}
+        <p data-reveal className="text-14 leading-14 tracking-[-0.02em] max-w-[30rem] s:max-w-[32.5rem]">
+          An occasional newsletter with insights and thoughts from a design engineer, drawn from over a decade of freelancing.
         </p>
-        <form
-          data-reveal
-          onSubmit={submit}
-          className="mt-25 s:mt-30 flex w-full max-w-[26rem] s:max-w-[32rem] items-center gap-x-8"
-          noValidate
-        >
+        <form data-reveal onSubmit={submit} className="mt-25 s:mt-30 flex w-full max-w-[26rem] s:max-w-[32rem] items-center gap-x-8" noValidate>
           <div className="relative flex h-40 s:h-45 w-full items-center rounded-full bg-black px-20 text-14 tracking-[-0.02em] min-w-0 flex-1">
             <input
               value={email}
