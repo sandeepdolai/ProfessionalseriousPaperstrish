@@ -5,12 +5,13 @@ import { useFolio } from "@/gl/react";
 import { FEATURED } from "@/lib/projects";
 import { HomeCarousel } from "./HomeCarousel";
 import { Hud } from "./Hud";
-import { MyProjects } from "./MyProjects";
+import { MyProjects, type EditorRatio } from "./MyProjects";
 import { ImportView } from "./ImportView";
+import { Editor } from "./Editor";
 import { ProjectSheet } from "./ProjectSheet";
 import { ProfileOverlay } from "./Overlays";
 
-type View = "home" | "my" | "project" | "import";
+type View = "home" | "my" | "project" | "import" | "editor";
 type Overlay = "profile" | null;
 
 export function App() {
@@ -21,6 +22,9 @@ export function App() {
   const [sheetEntered, setSheetEntered] = useState(false);
   const [myEntered, setMyEntered] = useState(false);
   const [importEntered, setImportEntered] = useState(false);
+  const [editorEntered, setEditorEntered] = useState(false);
+  const [editorRatio, setEditorRatio] = useState<EditorRatio>("1:1");
+  const [editorFileName, setEditorFileName] = useState<string | undefined>();
   const [carouselHidden, setCarouselHidden] = useState(false);
   const [returning, setReturning] = useState<string | null>(null);
 
@@ -31,8 +35,7 @@ export function App() {
 
   useEffect(() => {
     const mq = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-    const desktopish =
-      navigator.maxTouchPoints === 0 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    const desktopish = navigator.maxTouchPoints === 0 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
     if (!mq && !desktopish) return;
     const onMove = (e: PointerEvent) => {
       folio.moveBall(e.clientX, e.clientY);
@@ -56,17 +59,14 @@ export function App() {
     return () => document.documentElement.classList.remove("grabbable");
   }, [view, overlay]);
 
-  const toggleOverlay = useCallback(
-    (which: "profile") => {
-      setOverlay((prev) => {
-        const next = prev === which ? null : which;
-        if (next) folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
-        else folio.closeHole();
-        return next;
-      });
-    },
-    [folio]
-  );
+  const toggleOverlay = useCallback((which: "profile") => {
+    setOverlay((prev) => {
+      const next = prev === which ? null : which;
+      if (next) folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
+      else folio.closeHole();
+      return next;
+    });
+  }, [folio]);
 
   const closeOverlay = useCallback(() => {
     setOverlay((prev) => {
@@ -75,61 +75,89 @@ export function App() {
     });
   }, [folio]);
 
-  const wipeTo = useCallback(
-    async (next: "my" | "home" | "import") => {
-      if (busy.current) return;
-      busy.current = true;
-      folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
-      await wait(500);
-      setView(next);
-      setMyEntered(false);
-      setImportEntered(false);
-      await wait(120);
-      folio.closeHole();
-      await wait(220);
-      if (next === "my") setMyEntered(true);
-      if (next === "import") setImportEntered(true);
-      busy.current = false;
-    },
-    [folio]
-  );
+  const wipeTo = useCallback(async (next: "my" | "home" | "import") => {
+    if (busy.current) return;
+    busy.current = true;
+    folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
+    await wait(500);
+    setView(next);
+    setMyEntered(false);
+    setImportEntered(false);
+    await wait(120);
+    folio.closeHole();
+    await wait(220);
+    if (next === "my") setMyEntered(true);
+    if (next === "import") setImportEntered(true);
+    busy.current = false;
+  }, [folio]);
 
-  const openProject = useCallback(
-    async (slug: string, fromCard: boolean) => {
-      if (busy.current || overlay) return;
-      busy.current = true;
-      const entry = folio.cards.find((c) => c.slug === slug);
-      if (fromCard && entry) {
-        setCarouselHidden(true);
-        const sheetRect = folio.sheetRect();
-        let mounted = false;
-        await folio.flyCard(slug, sheetRect, 1, (p) => {
-          if (p > 0.45 && !mounted) {
-            mounted = true;
-            setView("project");
-            setProjectSlug(slug);
-            setSheetEntered(true);
-          }
-        });
-        if (!mounted) {
+  const openEditor = useCallback(async (ratio: EditorRatio, fileName?: string) => {
+    if (busy.current) return;
+    busy.current = true;
+    setEditorRatio(ratio);
+    setEditorFileName(fileName);
+    setEditorEntered(false);
+    folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
+    await wait(500);
+    setView("editor");
+    setMyEntered(false);
+    setImportEntered(false);
+    await wait(120);
+    folio.closeHole();
+    await wait(220);
+    setEditorEntered(true);
+    busy.current = false;
+  }, [folio]);
+
+  const closeEditor = useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setEditorEntered(false);
+    await wait(300);
+    folio.openHole(window.innerWidth / 2, window.innerHeight / 2);
+    await wait(420);
+    setView("my");
+    setEditorFileName(undefined);
+    setMyEntered(false);
+    folio.closeHole();
+    await wait(220);
+    setMyEntered(true);
+    busy.current = false;
+  }, [folio]);
+
+  const openProject = useCallback(async (slug: string, fromCard: boolean) => {
+    if (busy.current || overlay) return;
+    busy.current = true;
+    const entry = folio.cards.find((c) => c.slug === slug);
+    if (fromCard && entry) {
+      setCarouselHidden(true);
+      const sheetRect = folio.sheetRect();
+      let mounted = false;
+      await folio.flyCard(slug, sheetRect, 1, (p) => {
+        if (p > 0.45 && !mounted) {
+          mounted = true;
           setView("project");
           setProjectSlug(slug);
           setSheetEntered(true);
         }
-        entry.mesh.visible = false;
-        entry.flying = false;
-      } else {
-        folio.closeHole();
+      });
+      if (!mounted) {
         setView("project");
         setProjectSlug(slug);
-        setSheetEntered(false);
-        await wait(60);
         setSheetEntered(true);
       }
-      busy.current = false;
-    },
-    [folio, overlay]
-  );
+      entry.mesh.visible = false;
+      entry.flying = false;
+    } else {
+      folio.closeHole();
+      setView("project");
+      setProjectSlug(slug);
+      setSheetEntered(false);
+      await wait(60);
+      setSheetEntered(true);
+    }
+    busy.current = false;
+  }, [folio, overlay]);
 
   const closeProject = useCallback(async () => {
     if (busy.current) return;
@@ -140,7 +168,6 @@ export function App() {
     setView("home");
     setProjectSlug(null);
     setReturning(slug);
-
     const entry = slug ? folio.cards.find((c) => c.slug === slug) : null;
     if (entry) {
       entry.mesh.visible = true;
@@ -171,8 +198,9 @@ export function App() {
     if (busy.current) return;
     if (overlay) closeOverlay();
     else if (view === "project") closeProject();
+    else if (view === "editor") closeEditor();
     else if (view === "my" || view === "import") wipeTo("home");
-  }, [view, overlay, closeOverlay, closeProject, wipeTo]);
+  }, [view, overlay, closeOverlay, closeProject, closeEditor, wipeTo]);
 
   const goMy = useCallback(() => {
     if (busy.current || view !== "home" || overlay) return;
@@ -195,9 +223,11 @@ export function App() {
         apiRef={carouselApi}
       />
 
-      {view === "my" && <MyProjects entered={myEntered} onCreate={() => {}} />}
+      {view === "my" && <MyProjects entered={myEntered} onCreate={openEditor} />}
 
-      {view === "import" && <ImportView entered={importEntered} onClose={goHome} />}
+      {view === "import" && <ImportView entered={importEntered} onClose={goHome} onImport={(fileName) => openEditor("1:1", fileName)} />}
+
+      {view === "editor" && <Editor entered={editorEntered} ratio={editorRatio} importedFileName={editorFileName} onClose={closeEditor} />}
 
       {view === "project" && project && (
         <ProjectSheet
