@@ -12,29 +12,71 @@ interface OverlayProps {
 
 function useReveal(open: boolean) {
   const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(open);
   const [shown, setShown] = useState(false);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const parts = Array.from(el.querySelectorAll<HTMLElement>("[data-reveal]"));
-    if (open && !shown) {
+    let cancelled = false;
+    const timers: number[] = [];
+
+    if (open) {
+      setVisible(true);
       setShown(true);
+
       parts.forEach((p, i) => {
         const base = parseFloat(p.dataset.delay || "0");
         p.style.opacity = "0";
         p.style.transform = "translateY(0.8rem)";
-        window.setTimeout(() => {
-          tween(0, 1, 0.7, ease.expoOut, (v) => {
-            p.style.opacity = String(v);
-            p.style.transform = `translateY(${(1 - v) * 0.8}rem)`;
-          }, undefined);
-        }, base * 1000 + i * 35);
+        timers.push(
+          window.setTimeout(() => {
+            if (cancelled) return;
+            tween(0, 1, 0.7, ease.expoOut, (v) => {
+              p.style.opacity = String(v);
+              p.style.transform = `translateY(${(1 - v) * 0.8}rem)`;
+            }, undefined);
+          }, base * 1000 + i * 35)
+        );
       });
-    } else if (!open && shown) {
+    } else if (shown || visible) {
       setShown(false);
+
+      // Reverse the same reveal language on close instead of hiding the
+      // content immediately. This keeps the existing Paper Stish transition
+      // feeling continuous and prevents the action buttons from hanging on
+      // screen for a frame after the hole closes.
+      parts
+        .slice()
+        .reverse()
+        .forEach((p, i) => {
+          const startOpacity = parseFloat(p.style.opacity || "1");
+          timers.push(
+            window.setTimeout(() => {
+              if (cancelled) return;
+              tween(startOpacity, 0, 0.32, ease.expoOut, (v) => {
+                p.style.opacity = String(v);
+                p.style.transform = `translateY(${(1 - v) * 0.55}rem)`;
+              }, undefined);
+            }, i * 22)
+          );
+        });
+
+      timers.push(
+        window.setTimeout(() => {
+          if (!cancelled) setVisible(false);
+        }, 390)
+      );
     }
-  }, [open, shown]);
-  return ref;
+
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [open, shown, visible]);
+
+  return { ref, visible };
 }
 
 function UserIcon() {
@@ -76,13 +118,13 @@ function ProfileAction({ children, icon }: { children: React.ReactNode; icon?: R
 }
 
 export function ProfileOverlay({ open }: OverlayProps) {
-  const ref = useReveal(open);
+  const { ref, visible } = useReveal(open);
 
   return (
     <div
       ref={ref}
       className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center px-15 s:px-25"
-      style={{ visibility: open ? "visible" : "hidden" }}
+      style={{ visibility: visible ? "visible" : "hidden" }}
     >
       <div
         data-reveal
@@ -145,7 +187,7 @@ export function ProfileOverlay({ open }: OverlayProps) {
 }
 
 export function NewsletterOverlay({ open }: OverlayProps) {
-  const ref = useReveal(open);
+  const { ref, visible } = useReveal(open);
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -183,7 +225,7 @@ export function NewsletterOverlay({ open }: OverlayProps) {
     <div
       ref={ref}
       className="pointer-events-none fixed left-1/2 top-1/2 z-40 w-420 -translate-x-1/2 -translate-y-1/2 s:w-600"
-      style={{ visibility: open ? "visible" : "hidden" }}
+      style={{ visibility: visible ? "visible" : "hidden" }}
     >
       <div className="absolute inset-x-20 top-1/2 flex -translate-y-1/2 flex-col items-center text-center text-white">
         <p data-reveal className="text-14 leading-14 tracking-[-0.02em] max-w-[30rem] s:max-w-[32.5rem]">
