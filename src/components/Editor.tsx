@@ -295,9 +295,9 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
       <span className="pointer-events-none absolute left-1/2 top-[-37px] z-10 h-37 w-px bg-red-500 -translate-x-1/2"/>
       <button aria-label="Rotate asset" type="button" onPointerDown={e=>startAssetRotate(e,layer)} onPointerMove={moveAssetGesture} onPointerUp={endAssetGesture} onPointerCancel={endAssetGesture} className="absolute left-1/2 top-[-54px] z-20 flex size-32 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-black text-white shadow-md touch-none"><span>↻</span></button>
       <button aria-label="Resize asset" type="button" onPointerDown={e=>startAssetScale(e,layer)} onPointerMove={moveAssetGesture} onPointerUp={endAssetGesture} onPointerCancel={endAssetGesture} className="absolute right-[-16px] bottom-[-16px] z-20 flex size-32 translate-x-1/2 translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-black text-white shadow-md touch-none"><span>↘</span></button>
-     </div>
+     </div>}
     </div>
-   </div>})}
+   })}
 
    {textLayers.map(layer=>{const selected=layer.id===selectedTextId;const frame=selectionFrame;return <div key={layer.id} className="absolute inset-0 pointer-events-none">
     <div ref={el=>{textRefs.current[layer.id]=el}} role="button" tabIndex={0} onPointerDown={e=>startMove(e,layer)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onDoubleClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("text");setPanelOpen(true)}} onClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("move");setPanelOpen(false);measureSelectionFrame(layer.id)}} className={`absolute select-none pointer-events-auto px-4 py-2 outline-none ${activeTool==="move"?"cursor-move":"cursor-default"}`} style={{left:`${layer.x}%`,top:`${layer.y}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,fontFamily:layer.fontFamily,fontSize:`${layer.fontSize}px`,color:layer.color,opacity:layer.opacity,textAlign:layer.align,lineHeight:1.08,whiteSpace:"pre",width:"max-content",maxWidth:"none",touchAction:"none",zIndex:selected?20:10}}>
