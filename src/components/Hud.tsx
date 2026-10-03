@@ -3,15 +3,17 @@
 import { SITE } from "@/lib/projects";
 
 interface HudProps {
-  view: "home" | "my" | "project";
-  overlay: "profile" | "newsletter" | null;
+  view: "home" | "my" | "project" | "import";
+  overlay: "profile" | null;
   onProfile: () => void;
-  onNewsletter: () => void;
+  onImport: () => void;
   onHome: () => void;
   onMy: () => void;
 }
 
-export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onMy }: HudProps) {
+export function Hud({ view, overlay, onProfile, onImport, onHome, onMy }: HudProps) {
+  const importOpen = view === "import";
+
   return (
     <div className="pointer-events-none fixed inset-0 z-40 flex flex-col justify-between px-40 py-25 s:px-80 s:py-40 text-white">
       <div className="flex items-start justify-between">
@@ -66,11 +68,11 @@ export function Hud({ view, overlay, onProfile, onNewsletter, onHome, onMy }: Hu
         </nav>
         <button
           type="button"
-          aria-expanded={overlay === "newsletter"}
-          onClick={onNewsletter}
+          aria-expanded={importOpen}
+          onClick={importOpen ? onHome : onImport}
           className="label pointer-events-auto absolute bottom-0 right-0 transition-opacity duration-300 ease-out hover:opacity-60"
         >
-          {overlay === "newsletter" ? "Close" : "Newsletter"}
+          {importOpen ? "Close" : "Import"}
         </button>
       </div>
     </div>
