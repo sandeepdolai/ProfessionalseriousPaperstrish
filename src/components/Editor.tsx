@@ -10,7 +10,7 @@ type TextLayer={id:string;text:string;x:number;y:number;fontFamily:string;fontSi
 type Gesture={type:"move"|"scale"|"rotate";id:string;startX:number;startY:number;startLayer:TextLayer;startDistance:number;startAngle:number;anchorX:number;anchorY:number};
 type CanvasTransform={scale:number;panX:number;panY:number;rotation:number};
 type CanvasPointer={x:number;y:number};
-type CanvasGesture={startA:CanvasPointer;startB:CanvasPointer;startCenter:CanvasPointer;startDistance:number;startAngle:number;startTransform:CanvasTransform};
+type CanvasGesture={mode:"pan"|"transform";startA:CanvasPointer;startB?:CanvasPointer;startCenter:CanvasPointer;startDistance:number;startAngle:number;startTransform:CanvasTransform};
 const TOOLS:Array<{id:Tool;label:string;icon:string}>=[{id:"move",label:"Move",icon:"✦"},{id:"text",label:"Text",icon:"T"},{id:"photo",label:"Photo",icon:"▧"},{id:"sticker",label:"Sticker",icon:"◇"},{id:"eraser",label:"Eraser",icon:"⌁"},{id:"stroke",label:"Stroke",icon:"◌"},{id:"layers",label:"Layers",icon:"≡"}];
 const FONTS=["Inter","Arial","Georgia","Times New Roman","Courier New"];
 
@@ -132,10 +132,24 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 
  const startCanvasGesture=()=>{
   const pointers=canvasPointersRef.current;
+  if(pointers.size===1){
+   const [a]=Array.from(pointers.values());
+   if(!a)return;
+   canvasGestureRef.current={
+    mode:"pan",
+    startA:{...a},
+    startCenter:{...a},
+    startDistance:0,
+    startAngle:0,
+    startTransform:{...canvasTransformRef.current}
+   };
+   return;
+  }
   if(pointers.size!==2)return;
   const [a,b]=Array.from(pointers.values());
   if(!a||!b)return;
   canvasGestureRef.current={
+   mode:"transform",
    startA:{...a},
    startB:{...b},
    startCenter:center(a,b),
@@ -150,7 +164,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
   e.preventDefault();
   canvasPointersRef.current.set(e.pointerId,{x:e.clientX,y:e.clientY});
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
-  if(canvasPointersRef.current.size===2)startCanvasGesture();
+  startCanvasGesture();
  };
 
  const moveCanvasPointer=(e:React.PointerEvent<HTMLDivElement>)=>{
@@ -158,21 +172,36 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
   if(!pointers.has(e.pointerId))return;
   pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   const g=canvasGestureRef.current;
-  if(!g||pointers.size!==2)return;
+  if(!g)return;
   e.preventDefault();
+
+  if(g.mode==="pan" && pointers.size===1){
+   const p=pointers.get(e.pointerId);
+   if(!p)return;
+   const nextPanX=g.startTransform.panX+(p.x-g.startA.x);
+   const nextPanY=g.startTransform.panY+(p.y-g.startA.y);
+   setCanvasView({...g.startTransform,panX:nextPanX,panY:nextPanY});
+   return;
+  }
+
+  if(pointers.size!==2)return;
+  if(g.mode!=="transform")startCanvasGesture();
+  const activeGesture=canvasGestureRef.current;
+  if(!activeGesture||activeGesture.mode!=="transform")return;
+
   const values=Array.from(pointers.values());
   const a=values[0],b=values[1];
   if(!a||!b)return;
   const currentCenter=center(a,b);
   const currentDistance=Math.max(1,distance(a,b));
   const currentAngle=angle(a,b);
-  const factor=currentDistance/g.startDistance;
-  const nextScale=Math.max(.5,Math.min(4,g.startTransform.scale*factor));
-  const nextRotation=g.startTransform.rotation+normalizeAngle(currentAngle-g.startAngle);
+  const factor=currentDistance/activeGesture.startDistance;
+  const nextScale=Math.max(.5,Math.min(4,activeGesture.startTransform.scale*factor));
+  const nextRotation=activeGesture.startTransform.rotation+normalizeAngle(currentAngle-activeGesture.startAngle);
   const stageCenter=getStageCenter();
-  const startCenterVector={x:g.startCenter.x-stageCenter.x-g.startTransform.panX,y:g.startCenter.y-stageCenter.y-g.startTransform.panY};
-  const source=rotateVector(startCenterVector,-g.startTransform.rotation);
-  const sourceScaled=rotateVector(source.x*(nextScale/g.startTransform.scale),source.y*(nextScale/g.startTransform.scale),nextRotation);
+  const startCenterVector={x:activeGesture.startCenter.x-stageCenter.x-activeGesture.startTransform.panX,y:activeGesture.startCenter.y-stageCenter.y-activeGesture.startTransform.panY};
+  const source=rotateVector(startCenterVector,-activeGesture.startTransform.rotation);
+  const sourceScaled=rotateVector(source.x*(nextScale/activeGesture.startTransform.scale),source.y*(nextScale/activeGesture.startTransform.scale),nextRotation);
   const nextPanX=currentCenter.x-stageCenter.x-sourceScaled.x;
   const nextPanY=currentCenter.y-stageCenter.y-sourceScaled.y;
   setCanvasView({scale:nextScale,panX:nextPanX,panY:nextPanY,rotation:nextRotation});
@@ -181,7 +210,11 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  const endCanvasPointer=(e:React.PointerEvent<HTMLDivElement>)=>{
   canvasPointersRef.current.delete(e.pointerId);
   if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
-  if(canvasPointersRef.current.size<2)canvasGestureRef.current=null;
+  if(canvasPointersRef.current.size===0)canvasGestureRef.current=null;
+  else if(canvasPointersRef.current.size===1){
+   canvasGestureRef.current=null;
+   startCanvasGesture();
+  }
  };
 
  const importFont=async(file:File|undefined)=>{
