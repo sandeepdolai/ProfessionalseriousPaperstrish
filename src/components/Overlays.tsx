@@ -100,7 +100,7 @@ function SparkIcon() {
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" className="size-20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-      <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+    <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
     </svg>
   );
 }
@@ -157,7 +157,7 @@ export function ProfileOverlay({ open }: OverlayProps) {
               type="button"
               className="pointer-events-auto mt-18 h-48 w-full rounded-full bg-white text-black text-14 tracking-[-0.02em] transition-transform duration-300 hover:scale-[1.01] active:scale-[0.99]"
             >
-              Upgrade — $4.99/month
+              Upgrade
             </button>
           </div>
 
@@ -179,6 +179,7 @@ export function ProfileOverlay({ open }: OverlayProps) {
         </div>
 
         <div className="px-25 pb-22 text-center s:px-30 s:pb-25">
+          <p className="label opacity-35 mb-8">Privacy • Terms of Service •</p>
           <p className="label opacity-35">Your projects stay on your device.</p>
         </div>
       </div>
