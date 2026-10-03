@@ -1,23 +1,27 @@
 "use client";
 
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 export type EditorRatio = "9:16" | "16:9" | "4:5" | "1:1";
 interface EditorProps { entered:boolean; ratio:EditorRatio; importedFileName?:string; onClose:()=>void; }
 type Tool="move"|"text"|"photo"|"sticker"|"eraser"|"stroke"|"layers";
 type Align="left"|"center"|"right";
-type TextLayer={id:string;text:string;x:number;y:number;fontFamily:string;fontSize:number;color:string;align:Align;rotation:number;opacity:number};
+type StrokeStyle={enabled:boolean;width:number;color:string;opacity:number};
+type TextLayer={id:string;text:string;x:number;y:number;fontFamily:string;fontSize:number;color:string;align:Align;rotation:number;opacity:number;stroke:StrokeStyle};
 type EraserPoint={x:number;y:number};
 type EraserStroke={id:string;points:EraserPoint[];size:number;hardness:number;opacity:number};
-type PhotoLayer={id:string;src:string;name:string;x:number;y:number;width:number;height:number;rotation:number;opacity:number;eraserStrokes:EraserStroke[]};
+type PhotoLayer={id:string;src:string;name:string;x:number;y:number;width:number;height:number;rotation:number;opacity:number;eraserStrokes:EraserStroke[];stroke:StrokeStyle};
 type AssetKind="sticker"|"gif"|"image";
-type AssetLayer={id:string;kind:AssetKind;src:string;name:string;x:number;y:number;width:number;height:number;rotation:number;opacity:number;eraserStrokes:EraserStroke[]};
+type AssetLayer={id:string;kind:AssetKind;src:string;name:string;x:number;y:number;width:number;height:number;rotation:number;opacity:number;eraserStrokes:EraserStroke[];stroke:StrokeStyle};
 type AssetGesture={type:"move"|"scale"|"rotate";id:string;startX:number;startY:number;startLayer:AssetLayer;startDistance:number;startAngle:number;anchorX:number;anchorY:number};
 type Gesture={type:"move"|"scale"|"rotate";id:string;startX:number;startY:number;startLayer:TextLayer;startDistance:number;startAngle:number;anchorX:number;anchorY:number;startFrame?:{width:number;height:number}};
 type PhotoGesture={type:"move"|"scale"|"rotate";id:string;startX:number;startY:number;startLayer:PhotoLayer;startDistance:number;startAngle:number;anchorX:number;anchorY:number};
 type EraserUndo={kind:"photo"|"asset";id:string;strokeId:string};
 type LiveEraser={kind:"photo"|"asset";id:string;pointerId:number;stroke:EraserStroke;pendingPoint:EraserPoint;lastRenderedPoint:EraserPoint;canvas:HTMLCanvasElement;ctx:CanvasRenderingContext2D;width:number;height:number;frame:number|null};
+type StrokeHistoryEntry={kind:"text"|"photo"|"asset";id:string;before:StrokeStyle;after:StrokeStyle};
 const MASK_STYLE_CACHE=new Map<string,{signature:string;style:CSSProperties}>();
+const DEFAULT_STROKE:StrokeStyle={enabled:false,width:6,color:"#ffffff",opacity:100};
+const hexToRgba=(color:string,opacity:number)=>{const value=color.replace("#","");const full=value.length===3?value.split("").map(part=>part+part).join(""):value;const number=Number.parseInt(full,16);if(!Number.isFinite(number))return `rgba(255,255,255,${opacity/100})`;return `rgba(${number>>16},${number>>8&255},${number&255},${opacity/100})`;};
 const TOOLS:Array<{id:Tool;label:string;icon:string}>=[{id:"move",label:"Move",icon:"✦"},{id:"text",label:"Text",icon:"T"},{id:"photo",label:"Photo",icon:"▧"},{id:"sticker",label:"Sticker",icon:"◇"},{id:"eraser",label:"Eraser",icon:"⌁"},{id:"stroke",label:"Stroke",icon:"◌"},{id:"layers",label:"Layers",icon:"≡"}];
 const FONTS=["Inter","Arial","Georgia","Times New Roman","Courier New"];
 const STICKERS=[
@@ -58,12 +62,15 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 	 const assetInputRef=useRef<HTMLInputElement>(null);
 	 const textRefs=useRef<Record<string,HTMLDivElement|null>>({});
 	 const eraserStrokeRef=useRef<LiveEraser|null>(null);
+	 const strokeWorkCacheRef=useRef<Record<string,{work:HTMLCanvasElement;color:HTMLCanvasElement}>>({});
+	 const strokeHistoryRef=useRef<{past:StrokeHistoryEntry[];future:StrokeHistoryEntry[]}>({past:[],future:[]});
+	 const [strokeHistoryStatus,setStrokeHistoryStatus]=useState({canUndo:false,canRedo:false});
  const canvasStyle=useMemo(()=>({aspectRatio:({"9:16":"9 / 16","16:9":"16 / 9","4:5":"4 / 5","1:1":"1 / 1"} as Record<EditorRatio,string>)[ratio]}),[ratio]);
  const selectedText=textLayers.find(l=>l.id===selectedTextId)??null;
  const selectedPhoto=photoLayers.find(l=>l.id===selectedPhotoId)??null;
  const selectedAsset=assetLayers.find(l=>l.id===selectedAssetId)??null;
  const filteredStickers=STICKERS.filter(s=>{const q=assetSearch.trim().toLowerCase();return !q||`${s.name} ${s.tags}`.toLowerCase().includes(q);});
- const addText=()=>{const id=`text-${Date.now()}`;setTextLayers(c=>[...c,{id,text:"Double click to edit",x:50,y:50,fontFamily:fonts[0],fontSize:36,color:"#111",align:"center",rotation:0,opacity:1}]);setSelectedTextId(id);setActiveTool("text");setPanelOpen(true);};
+ const addText=()=>{const id=`text-${Date.now()}`;setTextLayers(c=>[...c,{id,text:"Double click to edit",x:50,y:50,fontFamily:fonts[0],fontSize:36,color:"#111",align:"center",rotation:0,opacity:1,stroke:{...DEFAULT_STROKE}}]);setSelectedTextId(id);setActiveTool("text");setPanelOpen(true);};
 	 const chooseTool=(tool:Tool)=>{
 	  setActiveTool(tool);
 	  if(tool==="text"){
@@ -101,12 +108,12 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
   if(!file)return;
   const src=URL.createObjectURL(file);
   if(selectedPhotoId){
-	  setPhotoLayers(c=>c.map(l=>l.id===selectedPhotoId?{...l,src,name:file.name,eraserStrokes:[]}:l));
+  setPhotoLayers(c=>c.map(l=>l.id===selectedPhotoId?{...l,src,name:file.name,eraserStrokes:[],stroke:{...DEFAULT_STROKE}}:l));
 	  setRenderedEraserLayers(cur=>({...cur,[`photo:${selectedPhotoId}`]:false}));
    return;
   }
   const id=`photo-${Date.now()}`;
-	  setPhotoLayers(c=>[...c,{id,src,name:file.name,x:50,y:50,width:58,height:42,rotation:0,opacity:1,eraserStrokes:[]}]);
+  setPhotoLayers(c=>[...c,{id,src,name:file.name,x:50,y:50,width:58,height:42,rotation:0,opacity:1,eraserStrokes:[],stroke:{...DEFAULT_STROKE}}]);
   setSelectedPhotoId(id);
   setSelectedTextId(null);
   setActiveTool("photo");
@@ -114,7 +121,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  };
  const addAsset=(kind:AssetKind,src:string,name:string)=>{
   const id=`asset-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
-	  setAssetLayers(cur=>[...cur,{id,kind,src,name,x:50,y:50,width:42,height:30,rotation:0,opacity:1,eraserStrokes:[]}]);
+  setAssetLayers(cur=>[...cur,{id,kind,src,name,x:50,y:50,width:42,height:30,rotation:0,opacity:1,eraserStrokes:[],stroke:{...DEFAULT_STROKE}}]);
   setSelectedAssetId(id);setSelectedTextId(null);setSelectedPhotoId(null);setPanelOpen(false);setActiveTool("move");
  };
  const addOrReplaceAsset=(file:File|undefined)=>{
@@ -125,7 +132,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
   const src=URL.createObjectURL(file);
   const kind:AssetKind=isGif?"gif":"image";
   const id=`asset-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
-	  setAssetLayers(cur=>[...cur,{id,kind,src,name:file.name,x:50,y:50,width:48,height:34,rotation:0,opacity:1,eraserStrokes:[]}]);
+  setAssetLayers(cur=>[...cur,{id,kind,src,name:file.name,x:50,y:50,width:48,height:34,rotation:0,opacity:1,eraserStrokes:[],stroke:{...DEFAULT_STROKE}}]);
   setSelectedAssetId(id);setSelectedTextId(null);setSelectedPhotoId(null);setPanelOpen(false);setActiveTool("move");
  };
  const deleteSelectedAsset=(id:string)=>{setAssetLayers(cur=>cur.filter(l=>l.id!==id));setSelectedAssetId(null);};
@@ -134,7 +141,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
  const duplicateSelectedPhoto=()=>{
   if(!selectedPhoto)return;
   const id=`photo-${Date.now()}`;
-	  const copy={...selectedPhoto,id,x:Math.min(92,selectedPhoto.x+5),y:Math.min(92,selectedPhoto.y+5),eraserStrokes:selectedPhoto.eraserStrokes.map(stroke=>({...stroke,points:stroke.points.map(point=>({...point}))}))};
+  const copy={...selectedPhoto,id,x:Math.min(92,selectedPhoto.x+5),y:Math.min(92,selectedPhoto.y+5),eraserStrokes:selectedPhoto.eraserStrokes.map(stroke=>({...stroke,points:stroke.points.map(point=>({...point}))})),stroke:{...selectedPhoto.stroke}};
   setPhotoLayers(c=>[...c,copy]);
   setSelectedPhotoId(id);
   setSelectedTextId(null);
@@ -290,6 +297,21 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 	  if(selectedAsset)setRenderedEraserLayers(cur=>({...cur,[`asset:${selectedAsset.id}`]:false}));
 	  setEraserUndo(cur=>cur.filter(item=>item.id!==(selectedPhoto?.id??selectedAsset?.id)));
 	 };
+	 const selectedStroke=selectedText?.stroke??selectedPhoto?.stroke??selectedAsset?.stroke??DEFAULT_STROKE;
+	 const updateSelectedStroke=(patch:Partial<StrokeStyle>)=>{
+	  const target=selectedText?{kind:"text" as const,id:selectedText.id,stroke:selectedText.stroke}:selectedPhoto?{kind:"photo" as const,id:selectedPhoto.id,stroke:selectedPhoto.stroke}:selectedAsset?{kind:"asset" as const,id:selectedAsset.id,stroke:selectedAsset.stroke}:null;if(!target)return;const after={...target.stroke,...patch};if(JSON.stringify(target.stroke)===JSON.stringify(after))return;strokeHistoryRef.current.past.push({kind:target.kind,id:target.id,before:{...target.stroke},after:{...after}});strokeHistoryRef.current.future=[];setStrokeHistoryStatus({canUndo:true,canRedo:false});if(target.kind==="text")setTextLayers(cur=>cur.map(layer=>layer.id===target.id?{...layer,stroke:after}:layer));else if(target.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===target.id?{...layer,stroke:after}:layer));else setAssetLayers(cur=>cur.map(layer=>layer.id===target.id?{...layer,stroke:after}:layer));
+	 };
+	 const applyStrokeHistory=(entry:StrokeHistoryEntry,stroke:StrokeStyle)=>{if(entry.kind==="text")setTextLayers(cur=>cur.map(layer=>layer.id===entry.id?{...layer,stroke:{...stroke}}:layer));else if(entry.kind==="photo")setPhotoLayers(cur=>cur.map(layer=>layer.id===entry.id?{...layer,stroke:{...stroke}}:layer));else setAssetLayers(cur=>cur.map(layer=>layer.id===entry.id?{...layer,stroke:{...stroke}}:layer));};
+	 const undoStroke=()=>{const entry=strokeHistoryRef.current.past.pop();if(!entry)return;applyStrokeHistory(entry,entry.before);strokeHistoryRef.current.future.push(entry);setStrokeHistoryStatus({canUndo:strokeHistoryRef.current.past.length>0,canRedo:true});};
+	 const redoStroke=()=>{const entry=strokeHistoryRef.current.future.pop();if(!entry)return;applyStrokeHistory(entry,entry.after);strokeHistoryRef.current.past.push(entry);setStrokeHistoryStatus({canUndo:true,canRedo:strokeHistoryRef.current.future.length>0});};
+	 useEffect(()=>{
+	  const layers=[...photoLayers.map(layer=>({key:`photo:${layer.id}`,src:layer.src,strokes:layer.eraserStrokes,stroke:layer.stroke})),...assetLayers.map(layer=>({key:`asset:${layer.id}`,src:layer.src,strokes:layer.eraserStrokes,stroke:layer.stroke}))];const cleanups:(()=>void)[]=[];
+	  for(const layer of layers){const canvas=document.querySelector(`[data-stroke-canvas="${layer.key}"]`);const img=document.querySelector(`img[data-layer-image="${layer.key}"]`);if(!(canvas instanceof HTMLCanvasElement)||!(img instanceof HTMLImageElement))continue;const render=()=>{const width=Math.max(1,canvas.parentElement?.clientWidth||img.clientWidth),height=Math.max(1,canvas.parentElement?.clientHeight||img.clientHeight),dpr=window.devicePixelRatio||1;canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);const cached=strokeWorkCacheRef.current[layer.key]??{work:document.createElement("canvas"),color:document.createElement("canvas")};strokeWorkCacheRef.current[layer.key]=cached;cached.work.width=canvas.width;cached.work.height=canvas.height;cached.color.width=canvas.width;cached.color.height=canvas.height;const work=cached.work.getContext("2d"),color=cached.color.getContext("2d"),out=canvas.getContext("2d");if(!work||!color||!out)return;work.setTransform(dpr,0,0,dpr,0,0);work.clearRect(0,0,width,height);const naturalWidth=img.naturalWidth||width,naturalHeight=img.naturalHeight||height,scale=Math.min(width/naturalWidth,height/naturalHeight),drawWidth=naturalWidth*scale,drawHeight=naturalHeight*scale;work.drawImage(img,(width-drawWidth)/2,(height-drawHeight)/2,drawWidth,drawHeight);for(const erase of layer.strokes)drawCanvasStroke(work,erase,width,height);out.setTransform(dpr,0,0,dpr,0,0);out.clearRect(0,0,width,height);canvas.style.opacity="0";if(!layer.stroke.enabled||layer.stroke.width<=0)return;color.setTransform(dpr,0,0,dpr,0,0);color.clearRect(0,0,width,height);color.fillStyle=layer.stroke.color;color.fillRect(0,0,width,height);color.globalCompositeOperation="destination-in";color.drawImage(cached.work,0,0,width,height);color.globalCompositeOperation="source-over";const radius=layer.stroke.width,radialSteps=Math.max(1,Math.ceil(radius/4));for(let distance=1;distance<=radius;distance+=radialSteps){for(let angle=0;angle<Math.PI*2;angle+=Math.PI/12){out.drawImage(cached.color,Math.cos(angle)*distance,Math.sin(angle)*distance,width,height);}}out.globalCompositeOperation="destination-out";out.drawImage(cached.work,0,0,width,height);out.globalCompositeOperation="source-over";canvas.style.opacity=String(layer.stroke.opacity/100);};if(img.complete)render();else{img.addEventListener("load",render);cleanups.push(()=>img.removeEventListener("load",render));}}
+	  return()=>{for(const cleanup of cleanups)cleanup();};
+	 },[photoLayers,assetLayers]);
+	 useEffect(()=>{
+	  const exportDesign=()=>{const base=canvasRef.current;if(!base)return;const rect=base.getBoundingClientRect(),scale=2,out=document.createElement("canvas");out.width=Math.max(1,Math.round(rect.width*scale));out.height=Math.max(1,Math.round(rect.height*scale));const ctx=out.getContext("2d");if(!ctx)return;ctx.fillStyle="#f2f0ea";ctx.fillRect(0,0,out.width,out.height);const drawBitmap=(img:HTMLImageElement,strokes:EraserStroke[],stroke:StrokeStyle,w:number,h:number)=>{const image=document.createElement("canvas"),outline=document.createElement("canvas"),work=document.createElement("canvas"),color=document.createElement("canvas");for(const canvas of [image,outline,work,color]){canvas.width=Math.max(1,Math.round(w*scale));canvas.height=Math.max(1,Math.round(h*scale));}const imageCtx=image.getContext("2d"),workCtx=work.getContext("2d"),outlineCtx=outline.getContext("2d"),colorCtx=color.getContext("2d");if(!imageCtx||!workCtx||!outlineCtx||!colorCtx)return null;const drawSource=(target:CanvasRenderingContext2D)=>{target.setTransform(scale,0,0,scale,0,0);const nw=img.naturalWidth||w,nh=img.naturalHeight||h,s=Math.min(w/nw,h/nh),dw=nw*s,dh=nh*s;target.drawImage(img,(w-dw)/2,(h-dh)/2,dw,dh);};drawSource(imageCtx);drawSource(workCtx);for(const erase of strokes)drawCanvasStroke(imageCtx,erase,w,h);for(const erase of strokes)drawCanvasStroke(workCtx,erase,w,h);if(stroke.enabled&&stroke.width>0){outlineCtx.setTransform(scale,0,0,scale,0,0);colorCtx.setTransform(scale,0,0,scale,0,0);colorCtx.fillStyle=stroke.color;colorCtx.fillRect(0,0,w,h);colorCtx.globalCompositeOperation="destination-in";colorCtx.drawImage(work,0,0,w,h);colorCtx.globalCompositeOperation="source-over";const steps=Math.max(1,Math.ceil(stroke.width/4));for(let distance=1;distance<=stroke.width;distance+=steps)for(let angle=0;angle<Math.PI*2;angle+=Math.PI/12)outlineCtx.drawImage(color,Math.cos(angle)*distance,Math.sin(angle)*distance,w,h);outlineCtx.globalCompositeOperation="destination-out";outlineCtx.drawImage(work,0,0,w,h);outlineCtx.globalCompositeOperation="source-over";}return {image,outline};};const drawLayer=(img:HTMLImageElement,layer:PhotoLayer|AssetLayer)=>{const w=rect.width*layer.width/100,h=rect.height*layer.height/100,bitmap=drawBitmap(img,layer.eraserStrokes,layer.stroke,w,h);if(!bitmap)return;ctx.save();ctx.translate(rect.width*layer.x/100*scale,rect.height*layer.y/100*scale);ctx.rotate(layer.rotation*Math.PI/180);ctx.globalAlpha=layer.opacity*layer.stroke.opacity/100;if(layer.stroke.enabled)ctx.drawImage(bitmap.outline,-w/2*scale,-h/2*scale,w*scale,h*scale);ctx.globalAlpha=layer.opacity;ctx.drawImage(bitmap.image,-w/2*scale,-h/2*scale,w*scale,h*scale);ctx.restore();};for(const layer of photoLayers){const img=document.querySelector(`img[data-layer-image="photo:${layer.id}"]`);if(img instanceof HTMLImageElement)drawLayer(img,layer);}for(const layer of assetLayers){const img=document.querySelector(`img[data-layer-image="asset:${layer.id}"]`);if(img instanceof HTMLImageElement)drawLayer(img,layer);}for(const layer of textLayers){ctx.save();ctx.translate(rect.width*layer.x/100*scale,rect.height*layer.y/100*scale);ctx.rotate(layer.rotation*Math.PI/180);ctx.globalAlpha=layer.opacity;ctx.font=`${layer.fontSize*scale}px ${layer.fontFamily}`;ctx.textAlign=layer.align;ctx.textBaseline="middle";if(layer.stroke.enabled){ctx.lineWidth=layer.stroke.width*scale;ctx.strokeStyle=hexToRgba(layer.stroke.color,layer.stroke.opacity);ctx.strokeText(layer.text,0,0);}ctx.fillStyle=layer.color;ctx.fillText(layer.text,0,0);ctx.restore();}const link=document.createElement("a");link.download="paper-stish-design.png";link.href=out.toDataURL("image/png");link.click();};window.addEventListener("paper-stish-export",exportDesign);return()=>window.removeEventListener("paper-stish-export",exportDesign);
+	 },[assetLayers,photoLayers,textLayers,ratio]);
 
  const importFont=async(file:File|undefined)=>{
   if(!file)return;
@@ -334,7 +356,8 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
       data-rotation={layer.rotation}
       style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,opacity:layer.opacity,touchAction:"none",zIndex:selected?15:5}}
      >
-      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(layerKey,layer.eraserStrokes),opacity:canvasVisible?0:1}}/>
+      <canvas data-stroke-canvas={layerKey} aria-hidden="true" className="pointer-events-none absolute inset-0 z-30 h-full w-full rounded-[10px]" style={{opacity:layer.stroke.enabled?layer.stroke.opacity/100:0}}/>
+      <img data-layer-image={layerKey} src={layer.src} alt={layer.name} draggable={false} className="relative z-10 block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(layerKey,layer.eraserStrokes),opacity:canvasVisible?0:1}}/>
       <canvas data-eraser-canvas={layerKey} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 h-full w-full rounded-[10px]" style={{opacity:canvasVisible?1:0}}/>
       {activeTool==="eraser"&&brushPreview?.kind==="photo"&&brushPreview.id===layer.id&&<span data-eraser-preview={`photo:${layer.id}`} className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
      </div>
@@ -360,7 +383,8 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
       onClick={e=>{e.stopPropagation();setSelectedAssetId(layer.id);setSelectedTextId(null);setSelectedPhotoId(null);if(activeTool!=="eraser")setActiveTool("move");if(activeTool!=="eraser")setPanelOpen(false);}}
       data-rotation={layer.rotation}
       style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${layer.width}%`,height:`${layer.height}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,opacity:layer.opacity,touchAction:"none",zIndex:selected?18:7}}>
-      <img src={layer.src} alt={layer.name} draggable={false} className="block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(layerKey,layer.eraserStrokes),opacity:canvasVisible?0:1}}/>
+      <canvas data-stroke-canvas={layerKey} aria-hidden="true" className="pointer-events-none absolute inset-0 z-30 h-full w-full rounded-[10px]" style={{opacity:layer.stroke.enabled?layer.stroke.opacity/100:0}}/>
+      <img data-layer-image={layerKey} src={layer.src} alt={layer.name} draggable={false} className="relative z-10 block h-full w-full rounded-[10px] object-contain select-none pointer-events-none" style={{...maskStyle(layerKey,layer.eraserStrokes),opacity:canvasVisible?0:1}}/>
       <canvas data-eraser-canvas={layerKey} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 h-full w-full rounded-[10px]" style={{opacity:canvasVisible?1:0}}/>
       {activeTool==="eraser"&&brushPreview?.kind==="asset"&&brushPreview.id===layer.id&&<span data-eraser-preview={`asset:${layer.id}`} className="pointer-events-none absolute z-40 rounded-full border-2 border-white bg-black/20" style={{left:`${brushPreview.x}%`,top:`${brushPreview.y}%`,width:eraserSize,height:eraserSize,transform:"translate(-50%,-50%)"}}/>}
      </div>
@@ -374,7 +398,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
 
    {textLayers.map(layer=>{const selected=layer.id===selectedTextId;const frame=selectionFrame;return <div key={layer.id} className="absolute inset-0 pointer-events-none">
     <div ref={el=>{textRefs.current[layer.id]=el}} role="button" tabIndex={0} onPointerDown={e=>startMove(e,layer)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onDoubleClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("text");setPanelOpen(true)}} onClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("move");setPanelOpen(false);measureSelectionFrame(layer.id)}} className={`absolute select-none pointer-events-auto px-4 py-2 outline-none ${activeTool==="move"?"cursor-move":"cursor-default"}`} style={{left:`${layer.x}%`,top:`${layer.y}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,fontFamily:layer.fontFamily,fontSize:`${layer.fontSize}px`,color:layer.color,opacity:layer.opacity,textAlign:layer.align,lineHeight:1.08,whiteSpace:"pre",width:"max-content",maxWidth:"none",touchAction:"none",zIndex:selected?20:10}}>
-      <span className="relative z-20 block" style={{whiteSpace:"pre",width:"max-content"}} onDoubleClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("text");setPanelOpen(true)}}>{layer.text}</span>
+      <span className="relative z-20 block" style={{whiteSpace:"pre",width:"max-content",WebkitTextStroke:layer.stroke.enabled?`${layer.stroke.width}px ${hexToRgba(layer.stroke.color,layer.stroke.opacity)}`:"0 transparent",paintOrder:"stroke fill"}} onDoubleClick={e=>{e.stopPropagation();setSelectedTextId(layer.id);setActiveTool("text");setPanelOpen(true)}}>{layer.text}</span>
     </div>
     {selected&&activeTool==="move"&&frame&&<div className="absolute pointer-events-auto z-30" style={{left:`${layer.x}%`,top:`${layer.y}%`,width:`${frame.width}px`,height:`${frame.height}px`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,transformOrigin:"center center"}}>
       <div className="absolute inset-0 rounded-[2px] border-2 border-dashed border-red-500 pointer-events-auto" onPointerDown={e=>startMove(e,layer)} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} style={{touchAction:"none"}} aria-label="Move selected object"/>
@@ -385,7 +409,7 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
    </div>})}
    {importedFileName&&<div className="absolute left-12 top-12 rounded-full bg-black/75 px-10 py-6 text-10 text-white/85">{importedFileName}</div>}
   </div></div></div>
-  <div className="absolute bottom-0 left-0 right-0 z-20 px-12 pb-18 s:px-30 s:pb-25"><div className="mx-auto flex max-w-[980px] items-end justify-center gap-6 rounded-[22px] border border-white/10 bg-black/55 p-7 backdrop-blur-xl"><div className="flex min-w-0 flex-1 items-center justify-center gap-2 overflow-x-auto">{TOOLS.map(tool=>{const active=activeTool===tool.id;return <button key={tool.id} type="button" onClick={()=>chooseTool(tool.id)} className={`group flex min-w-[54px] shrink-0 flex-col items-center justify-center gap-4 rounded-[15px] px-8 py-8 transition-all ${active?"bg-white text-black":"text-white/65 hover:bg-white/8 hover:text-white"}`}><span className="flex size-21 items-center justify-center text-15">{tool.icon}</span><span className="text-10">{tool.label}</span></button>})}</div><div className="flex shrink-0 items-center gap-5 border-l border-white/10 pl-7"><button type="button" className="inline-flex size-38 items-center justify-center text-18 text-white/70">↶</button><button type="button" className="inline-flex size-38 items-center justify-center text-18 text-white/70">↷</button></div></div></div>
+  <div className="absolute bottom-0 left-0 right-0 z-20 px-12 pb-18 s:px-30 s:pb-25"><div className="mx-auto flex max-w-[980px] items-end justify-center gap-6 rounded-[22px] border border-white/10 bg-black/55 p-7 backdrop-blur-xl"><div className="flex min-w-0 flex-1 items-center justify-center gap-2 overflow-x-auto">{TOOLS.map(tool=>{const active=activeTool===tool.id;return <button key={tool.id} type="button" onClick={()=>chooseTool(tool.id)} className={`group flex min-w-[54px] shrink-0 flex-col items-center justify-center gap-4 rounded-[15px] px-8 py-8 transition-all ${active?"bg-white text-black":"text-white/65 hover:bg-white/8 hover:text-white"}`}><span className="flex size-21 items-center justify-center text-15">{tool.icon}</span><span className="text-10">{tool.label}</span></button>})}</div><div className="flex shrink-0 items-center gap-5 border-l border-white/10 pl-7"><button type="button" onClick={undoStroke} disabled={!strokeHistoryStatus.canUndo} className="inline-flex size-38 items-center justify-center text-18 text-white/70 disabled:opacity-30">↶</button><button type="button" onClick={redoStroke} disabled={!strokeHistoryStatus.canRedo} className="inline-flex size-38 items-center justify-center text-18 text-white/70 disabled:opacity-30">↷</button></div></div></div>
 
   {panelOpen&&activeTool==="sticker"&&<div className="absolute bottom-105 left-12 right-12 z-30 mx-auto max-w-[820px]"><div className="rounded-[20px] border border-white/10 bg-[#151515]/95 px-18 py-16 shadow-2xl backdrop-blur-xl">
    <div className="flex items-center justify-between"><div><p className="text-14">Library</p><p className="mt-2 text-11 text-white/40">Choose something to add to your design.</p></div><button type="button" onClick={()=>setPanelOpen(false)} className="size-32 rounded-full bg-white/7">×</button></div>
@@ -419,6 +443,17 @@ export function Editor({entered,ratio,importedFileName,onClose}:EditorProps){
     <label className="grid gap-5 text-10 text-white/45">Hardness <span className="text-white/70">{eraserHardness}%</span><input type="range" min="0" max="100" value={eraserHardness} onChange={e=>setEraserHardness(Number(e.target.value))}/></label>
     <label className="grid gap-5 text-10 text-white/45">Opacity <span className="text-white/70">{eraserOpacity}%</span><input type="range" min="1" max="100" value={eraserOpacity} onChange={e=>setEraserOpacity(Number(e.target.value))}/></label>
     <div className="flex flex-wrap gap-7"><button type="button" onClick={undoErase} disabled={!eraserUndo.length} className="rounded-full bg-white/8 px-13 py-8 text-11 text-white/75 disabled:opacity-30">Undo Erase</button><button type="button" onClick={resetErase} className="rounded-full bg-white/8 px-13 py-8 text-11 text-white/75">Reset</button></div>
+   </div>}
+  </div></div>}
+
+  {panelOpen&&activeTool==="stroke"&&<div className="absolute bottom-105 left-12 right-12 z-30 mx-auto max-w-[720px]"><div className="rounded-[20px] border border-white/10 bg-[#151515]/95 px-18 py-16 shadow-2xl backdrop-blur-xl">
+   <div className="flex items-center justify-between"><div><p className="text-14">Stroke</p><p className="mt-2 text-11 text-white/40">Outline the visible shape without changing the original.</p></div><button type="button" onClick={()=>setPanelOpen(false)} className="size-32 rounded-full bg-white/7">×</button></div>
+   {!selectedText&&!selectedPhoto&&!selectedAsset&&<p className="mt-14 rounded-[13px] border border-white/8 bg-white/4 px-12 py-11 text-12 text-white/65">Select text or an image to edit its outline.</p>}
+   {(selectedText||selectedPhoto||selectedAsset)&&<div className="mt-14 grid gap-10">
+    <button type="button" aria-pressed={selectedStroke.enabled} onClick={()=>updateSelectedStroke({enabled:!selectedStroke.enabled})} className={`flex items-center justify-between rounded-[13px] px-12 py-10 text-12 ${selectedStroke.enabled?"bg-white text-black":"bg-white/8 text-white/70"}`}><span>Stroke</span><span>{selectedStroke.enabled?"On":"Off"}</span></button>
+    <label className="grid gap-5 text-10 text-white/45">Width <span className="text-white/70">{selectedStroke.width}px</span><input type="range" min="0" max="30" step="1" value={selectedStroke.width} onChange={e=>updateSelectedStroke({width:Number(e.target.value)})}/></label>
+    <div className="flex flex-wrap items-center gap-10"><label className="flex items-center gap-7 text-10 text-white/45">Outline Color <input aria-label="Outline Color" type="color" value={selectedStroke.color} onChange={e=>updateSelectedStroke({color:e.target.value})} className="size-28"/></label><label className="flex items-center gap-7 text-10 text-white/45">HEX <input aria-label="Outline Color HEX" value={selectedStroke.color} onChange={e=>{const value=e.target.value;if(/^#[0-9a-fA-F]{6}$/.test(value))updateSelectedStroke({color:value})}} className="w-90 rounded-[10px] border border-white/10 bg-white/6 px-8 py-6 text-11 text-white outline-none"/></label></div>
+    <label className="grid gap-5 text-10 text-white/45">Opacity <span className="text-white/70">{selectedStroke.opacity}%</span><input type="range" min="0" max="100" value={selectedStroke.opacity} onChange={e=>updateSelectedStroke({opacity:Number(e.target.value)})}/></label>
    </div>}
   </div></div>}
 
